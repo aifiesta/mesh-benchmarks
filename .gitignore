@@ -1,2 +1,13 @@
 .DS_Store
 *.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Large regenerated replay output — commit only the small aggregate.csv.
+router_eval/results/routerbench_*/picks.csv

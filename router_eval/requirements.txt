@@ -1,0 +1,10 @@
+# router_eval dependencies.
+#
+# The fixture path (default `python -m router_eval.replay`) and the tests need
+# NOTHING from this file — they are pure stdlib. These are only for the REAL
+# dataset path (`--source routerbench`), which downloads + unpickles RouterBench.
+pandas>=2.0
+huggingface_hub>=0.23
+
+# Dev / CI:
+pytest>=7.0
