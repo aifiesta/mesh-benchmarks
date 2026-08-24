@@ -13,7 +13,10 @@ Each repo in this series answers one specific question with full data and reprod
 | Repo | Question | Status | Last update |
 | --- | --- | --- | --- |
 | [mesh-bench-cost-vs-quality](https://github.com/aifiesta/mesh-bench-cost-vs-quality) | What does a real correct answer or quality-point cost across five LLMs? | Pilot (n=5/task). v1 with n=30 in progress. | 2026-05 |
+| [router_eval](./router_eval) (in-repo) | How good is Mesh's frozen `model=auto` routing table vs. random / premium / oracle? | Phase 1: offline RouterBench replay skeleton + first result. | 2026-08 |
 | _next benchmark slot_ | _coming soon_ | | |
+
+> `router_eval` is the one exception to "one benchmark, one repo, original dataset": it lives in-repo and *replays a fixed public dataset* (RouterBench) offline, because it measures the router's **decision logic**, not any model's quality. Its contamination trade-off is documented in [`router_eval/RESULTS.md`](./router_eval/RESULTS.md).
 
 ## Conventions across all benchmarks
 
