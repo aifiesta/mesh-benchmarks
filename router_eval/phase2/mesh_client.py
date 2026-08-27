@@ -92,10 +92,13 @@ class MeshClient:
 
     # ── OpenAI-compatible surface ────────────────────────────────────────────────
     def list_model_ids(self) -> list[str]:
-        """GET /models -> the catalog id list (OpenAI-compat {data:[{id}]})."""
+        """GET /models -> the catalog id list. Accepts BOTH the OpenAI-compat
+        ``{"data": [{"id": ...}]}`` envelope and a bare ``[{"id": ...}]`` list —
+        Mesh's live ``/v1/models`` returns the bare list."""
         self._require_live("list models")
         body = self._get_json("/models")  # pragma: no cover - live only
-        return [str(m.get("id")) for m in body.get("data", []) if m.get("id")]
+        rows = body if isinstance(body, list) else body.get("data", [])
+        return [str(m.get("id")) for m in rows if isinstance(m, dict) and m.get("id")]
 
     def chat(
         self,
