@@ -1,0 +1,80 @@
+"""
+Answer providers — get a model's answer to a prompt, deduped + cached.
+
+`LiveAnswerer` calls the Mesh chat API (live only) and caches by (model, prompt), so a
+(prompt, model) pair picked by several strategies is paid for ONCE. `MockAnswerer` returns
+a deterministic offline answer for the dry run + tests.
+
+Return shape: {"answer": str, "prompt_tokens": int, "completion_tokens": int, "model": str}.
+Cost is computed by the pipeline from these token counts × the catalog price.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from router_eval.phase2.cache import DiskCache, make_key
+
+
+def _est_tokens(text: str) -> int:
+    return max(1, len(text) // 4)
+
+
+class Answerer:
+    def answer(self, prompt: str, model_id: str) -> dict:
+        raise NotImplementedError
+
+
+@dataclass
+class MockAnswerer(Answerer):
+    """Deterministic offline answer — a stand-in, NOT a real model output."""
+
+    calls: int = 0
+
+    def answer(self, prompt: str, model_id: str) -> dict:
+        self.calls += 1
+        text = f"[mock:{model_id}] answer to: {prompt[:80]}"
+        return {
+            "answer": text,
+            "prompt_tokens": _est_tokens(prompt),
+            "completion_tokens": _est_tokens(text),
+            "model": model_id,
+        }
+
+
+@dataclass
+class LiveAnswerer(Answerer):
+    """Real Mesh inference, cached by (model, prompt). Live mode only."""
+
+    client: object = None  # MeshClient (live)
+    cache: DiskCache = field(default_factory=DiskCache)
+    max_tokens: int = 1024
+    temperature: float = 0.7
+    calls: int = 0
+
+    def answer(self, prompt: str, model_id: str) -> dict:  # pragma: no cover - live only
+        key = make_key("answer", model_id, prompt)
+
+        def _compute() -> dict:
+            self.calls += 1
+            text, usage = self.client.chat(
+                model_id, prompt, max_tokens=self.max_tokens, temperature=self.temperature
+            )
+            return {
+                "answer": text,
+                "prompt_tokens": int(usage.get("prompt_tokens") or _est_tokens(prompt)),
+                "completion_tokens": int(usage.get("completion_tokens") or _est_tokens(text)),
+                "model": model_id,
+            }
+
+        return self.cache.get_or_compute("answer", key, _compute)
+
+    def seed(self, prompt: str, model_id: str, answer: str, prompt_tokens: int, completion_tokens: int) -> None:
+        """Pre-load a known (prompt, model) answer into the cache — e.g. the already-served
+        response — so it costs no live call when a strategy also picks that model."""
+        key = make_key("answer", model_id, prompt)
+        if self.cache.get("answer", key) is None:
+            self.cache.put("answer", key, {
+                "answer": answer, "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens, "model": model_id, "seeded": True,
+            })
