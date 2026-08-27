@@ -56,7 +56,10 @@ def test_infer_model_ids_ignores_metadata_and_response_cols():
 def test_replay_runs_end_to_end(items):
     results = evaluate_all(build_policies(), items, seed=SEED)
     names = {r.name for r in results}
-    assert names == {"random", "always_cheapest", "always_premium", "benchmark", "oracle"}
+    assert names == {
+        "random", "always_cheapest", "always_premium",
+        "benchmark", "heuristic", "weighted", "oracle",
+    }
     for r in results:
         assert r.n == len(items)
 
@@ -136,6 +139,8 @@ def test_resolve_benchmark_math_prefers_gpt4_over_unmapped_deepseek():
 
 def test_stubs_raise(items):
     rng = random.Random(SEED)
-    for stub in stub_policies():
+    stubs = stub_policies()
+    assert {s.name for s in stubs} == {"registry", "not_diamond"}
+    for stub in stubs:
         with pytest.raises(NotImplementedError):
             stub.pick(items[0], items[0].models, rng)

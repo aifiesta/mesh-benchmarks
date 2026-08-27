@@ -29,6 +29,7 @@ from __future__ import annotations
 import random
 
 from router_eval.benchmark_table import SUPERMODE_BENCHMARKS, SUPERMODE_BRANDS
+from router_eval.heuristic_gate import CONVERSATION_CATEGORY
 
 # ── RouterBench's fixed 11-model universe (exact column names in the .pkl) ─────
 ROUTERBENCH_MODELS: list[str] = [
@@ -117,6 +118,58 @@ DEFAULT_CATEGORY = "General reasoning / Q&A - General Conversation, Chatting"
 def eval_to_category(eval_name: str) -> str:
     """Map a RouterBench eval_name to a SUPERMODE_BENCHMARKS category string."""
     return FAMILY_TO_CATEGORY.get(eval_to_family(eval_name), DEFAULT_CATEGORY)
+
+
+def ranked_routerbench_models(
+    eval_name: str, candidates: list[str], *, tier: str = "premium"
+) -> list[str]:
+    """The category's brand ranking expanded to RouterBench models, best-first.
+
+    The ordered, deduped pool `WeightedPolicy` scores over — the analogue of
+    routersvc `ranked_model_ids_for_category`. Walks the same SUPERMODE ranking as
+    `resolve_benchmark_model`, but returns EVERY mapped+present model in rank order
+    (rank 0 = best) instead of only the top one. Within a tie group, members are
+    ordered lexically by model id (deterministic, matching the source scorer's
+    id tie-break). Unmapped brands are skipped; models absent from `candidates`
+    are dropped. Empty when no ranked brand maps into the candidate set.
+    """
+    brand_to_model = (
+        BRAND_TO_ROUTERBENCH_STANDARD if tier == "standard" else BRAND_TO_ROUTERBENCH_PREMIUM
+    )
+    cand = set(candidates)
+    category = eval_to_category(eval_name)
+    ranking = SUPERMODE_BENCHMARKS.get(category) or SUPERMODE_BENCHMARKS.get(DEFAULT_CATEGORY, [])
+    out: list[str] = []
+    seen: set[str] = set()
+    for entry in ranking:
+        brands = [entry] if isinstance(entry, str) else entry
+        models = sorted(
+            {brand_to_model[b] for b in brands if b in brand_to_model and brand_to_model[b] in cand}
+        )
+        for m in models:
+            if m not in seen:
+                seen.add(m)
+                out.append(m)
+    return out
+
+
+def resolve_heuristic_conversation_model(candidates: list[str]) -> str | None:
+    """The model the ported heuristic fast lane routes an ACCEPTED prompt to.
+
+    Mirrors routersvc `HeuristicStrategy.resolve`: take the conversation
+    category's ranking, its rank-0 entry, that entry's FIRST brand (deterministic
+    first-of-tie — the heuristic does NO random tie-break here), and resolve it to
+    the STANDARD-tier model. Returns None when that model is not in `candidates`
+    (the strategy's `model_not_in_candidates` fail-soft → fall through). Uses the
+    frozen v1 SUPERMODE table, consistent with `benchmark_table.py`.
+    """
+    ranking = SUPERMODE_BENCHMARKS.get(CONVERSATION_CATEGORY) or []
+    top = ranking[0] if ranking else None
+    brand = top if isinstance(top, str) else (top[0] if top else None)
+    model_id = BRAND_TO_ROUTERBENCH_STANDARD.get(brand) if brand else None
+    if model_id and model_id in set(candidates):
+        return model_id
+    return None
 
 
 def resolve_benchmark_model(
