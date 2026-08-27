@@ -11,3 +11,15 @@ venv/
 
 # Large regenerated replay output — commit only the small aggregate.csv.
 router_eval/results/routerbench_*/picks.csv
+
+# ── Phase 2 (router_eval/phase2) — REAL USER PROMPTS + ANSWERS = PII. NEVER COMMIT. ──
+# Raw extracted Mesh traffic (real prompts + served answers).
+router_eval/phase2/mesh_traffic.jsonl
+# On-disk caches of live answers + judgments (contain prompts/answers).
+router_eval/phase2/.cache/
+router_eval/phase2/cache/
+# Any live-run outputs (picks/answers/judgments/aggregates with prompt text).
+router_eval/phase2/out/
+router_eval/phase2/runs/
+*.answers.jsonl
+*.judgments.jsonl

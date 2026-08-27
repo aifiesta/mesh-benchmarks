@@ -40,14 +40,22 @@ class Item:
     """One replay unit: a task label plus every model's KNOWN score and cost.
 
     `scores` / `costs` are hindsight ground truth. Realistic policies (random,
-    premium, cheapest, benchmark, ...) may read only `task` and the candidate id
-    set; ONLY the oracle is allowed to read `scores`/`costs` to pick per item.
+    premium, cheapest, benchmark, ...) may read only `task`, `prompt` and the
+    candidate id set; ONLY the oracle is allowed to read `scores`/`costs` to pick
+    per item.
+
+    `prompt` is the raw request text. Phase 1 policies keyed off `task`
+    (RouterBench's ground-truth eval_name) alone; the ported `heuristic`
+    fast-lane gate and the classifier-tax token estimate (metrics.py) need the
+    actual prompt text, so it is threaded through here. It defaults to "" so any
+    older caller that built an Item without a prompt keeps working.
     """
 
     sample_id: str
     task: str  # RouterBench eval_name
     scores: dict[str, float]  # model_id -> performance score in [0, 1]
     costs: dict[str, float]  # model_id -> USD cost
+    prompt: str = ""  # raw request text (used by heuristic gate + classifier-tax estimate)
 
     @property
     def models(self) -> list[str]:
@@ -85,6 +93,7 @@ def _row_to_item(row: dict, model_ids: list[str]) -> Item | None:
         task=str(row.get("eval_name", "")),
         scores=scores,
         costs=costs,
+        prompt=str(row.get("prompt", "")),
     )
 
 

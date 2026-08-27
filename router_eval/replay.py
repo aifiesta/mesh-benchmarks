@@ -44,39 +44,47 @@ def _write_csvs(out_dir: Path, results: list[PolicyResult]) -> None:
         w = csv.writer(f)
         w.writerow(
             ["policy", "n", "mean_score", "mean_cost_usd", "classifier_cost_usd",
-             "mean_cost_with_classifier_usd", "gap_to_oracle", "pays_classifier_call"]
+             "mean_cost_with_classifier_usd", "classifier_latency_ms", "gap_to_oracle",
+             "pays_classifier_call"]
         )
         for r in results:
             w.writerow([
                 r.name, r.n, f"{r.mean_score:.6f}", f"{r.mean_cost:.8f}",
                 f"{r.classifier_cost_usd:.8f}", f"{r.mean_cost_with_classifier:.8f}",
+                f"{r.classifier_latency_ms:.1f}",
                 "" if r.gap_to_oracle is None else f"{r.gap_to_oracle:.6f}",
                 r.pays_classifier_call,
             ])
 
     with (out_dir / "picks.csv").open("w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["policy", "sample_id", "task", "model", "score", "cost_usd"])
+        w.writerow(["policy", "sample_id", "task", "model", "score", "cost_usd",
+                    "classifier_cost_usd"])
         for r in results:
             for p in r.picks:
-                w.writerow([r.name, p.sample_id, p.task, p.model, f"{p.score:.6f}", f"{p.cost:.8f}"])
+                w.writerow([r.name, p.sample_id, p.task, p.model, f"{p.score:.6f}",
+                            f"{p.cost:.8f}", f"{p.classifier_cost:.8f}"])
 
 
 def _print_report(results: list[PolicyResult], tag: str, n_items: int) -> None:
     print(f"\nRouterBench replay — source={tag}, items={n_items}\n")
-    header = f"{'policy':<16}{'n':>7}{'mean_score':>12}{'mean_cost$':>13}{'+clf$':>9}{'gap_to_oracle':>15}"
+    header = (
+        f"{'policy':<16}{'n':>7}{'mean_score':>12}{'infer_cost$':>13}"
+        f"{'clf_tax$':>11}{'cost+tax$':>12}{'clf_ms':>8}{'gap_oracle':>12}"
+    )
     print(header)
     print("-" * len(header))
     for r in results:
-        gap = "  (ceiling)" if r.name == "oracle" else f"{r.gap_to_oracle:>15.4f}"
-        clf = "  paid*" if r.pays_classifier_call else "     -"
+        gap = "  (ceiling)" if r.name == "oracle" else f"{r.gap_to_oracle:>12.4f}"
         print(
-            f"{r.name:<16}{r.n:>7}{r.mean_score:>12.4f}{r.mean_cost:>13.6f}{clf:>9}"
-            + ("" if r.name == "oracle" else gap)
-            + ("  (ceiling)" if r.name == "oracle" else "")
+            f"{r.name:<16}{r.n:>7}{r.mean_score:>12.4f}{r.mean_cost:>13.6f}"
+            f"{r.classifier_cost_usd:>11.6f}{r.mean_cost_with_classifier:>12.6f}"
+            f"{r.classifier_latency_ms:>8.0f}" + gap
         )
-    print("\n* '+clf' = policy pays a per-request classifier LLM call in prod that this")
-    print("  replay does not yet charge (classifier_cost_usd=0.0). See metrics.py TODO.")
+    print("\nclf_tax$ = mean per-request classifier LLM call this strategy pays in prod")
+    print("  (AC2: benchmark/weighted → gpt-4o-mini; registry → gemini-3-flash-preview;")
+    print("  heuristic → benchmark's classifier ONLY on a fast-lane miss). cost+tax$ is the")
+    print("  fair cross-strategy cost axis; clf_ms is routing overhead, separate from inference.")
 
 
 def _print_ac3(results: list[PolicyResult]) -> None:
@@ -94,7 +102,7 @@ def _print_ac3(results: list[PolicyResult]) -> None:
 
 def _print_stubs() -> None:
     stubs = stub_policies()
-    print("\nStubbed strategies (Phase-1 out of scope, same interface):")
+    print("\nStubbed strategies (not measurable offline, same interface):")
     for s in stubs:
         clf = "pays classifier call" if s.pays_classifier_call else "no internal classifier call"
         print(f"  - {s.name:<12} {s.reason}  [{clf}]")
@@ -111,7 +119,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED,
                         help="RNG seed for random baseline + benchmark tie-breaks")
     parser.add_argument("--benchmark-tier", choices=["premium", "standard"], default="premium",
-                        help="which RouterBench tier the benchmark brand map resolves to")
+                        help="which RouterBench tier the benchmark/heuristic/weighted brand map resolves to")
+    parser.add_argument("--weight-profile",
+                        choices=["quality_first", "balanced", "cost_first", "latency_first"],
+                        default="balanced", help="weighted strategy's quality/cost weight profile")
     parser.add_argument("--out", type=Path, default=None,
                         help="output dir for CSVs (default: router_eval/results/<tag>/)")
     args = parser.parse_args(argv)
@@ -121,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         print("No items loaded — aborting.", file=sys.stderr)
         return 1
 
-    policies = build_policies(benchmark_tier=args.benchmark_tier)
+    policies = build_policies(benchmark_tier=args.benchmark_tier, weight_profile=args.weight_profile)
     results = evaluate_all(policies, items, seed=args.seed)
 
     tag = _source_tag(args)

@@ -18,7 +18,9 @@ jobs:
           python-version: "3.12"
       - name: Install pytest (fixture path needs no other deps)
         run: python -m pip install --upgrade pip pytest
-      - name: Run the fixture replay end-to-end
+      - name: Run the fixture replay end-to-end (Phase 1 + Part A)
         run: python -m router_eval.replay
-      - name: Run tests
-        run: python -m pytest router_eval/tests/ -q
+      - name: Phase 2 dry-run smoke on the PII-free sample traffic
+        run: python -m router_eval.phase2 --traffic router_eval/phase2/fixtures/traffic_sample.jsonl
+      - name: Run tests (Part A + Phase 2, all offline)
+        run: python -m pytest router_eval/ -q
