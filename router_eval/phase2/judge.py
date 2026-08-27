@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from router_eval.phase2.cache import DiskCache, make_key
 
 # Default judge: a strong model. Configurable via the CLI (--judge-model).
-DEFAULT_JUDGE_MODEL = "anthropic/claude-opus-4-8"
+DEFAULT_JUDGE_MODEL = "anthropic/claude-opus-4.8"
 
 _RUBRIC_SYSTEM = (
     "You are a strict evaluation judge. Score the assistant's answer to the user's "

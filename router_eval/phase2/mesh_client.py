@@ -91,14 +91,18 @@ class MeshClient:
             raise MeshAPIError(f"GET {path} transport error: {exc}") from exc
 
     # ── OpenAI-compatible surface ────────────────────────────────────────────────
-    def list_model_ids(self) -> list[str]:
-        """GET /models -> the catalog id list. Accepts BOTH the OpenAI-compat
-        ``{"data": [{"id": ...}]}`` envelope and a bare ``[{"id": ...}]`` list —
-        Mesh's live ``/v1/models`` returns the bare list."""
+    def list_models(self) -> list[dict]:
+        """GET /models -> full model objects. Accepts BOTH the OpenAI-compat
+        ``{"data": [...]}`` envelope and a bare ``[...]`` list — Mesh's live
+        ``/v1/models`` returns the bare list."""
         self._require_live("list models")
         body = self._get_json("/models")  # pragma: no cover - live only
         rows = body if isinstance(body, list) else body.get("data", [])
-        return [str(m.get("id")) for m in rows if isinstance(m, dict) and m.get("id")]
+        return [m for m in rows if isinstance(m, dict) and m.get("id")]
+
+    def list_model_ids(self) -> list[str]:
+        """GET /models -> the catalog id list."""
+        return [str(m["id"]) for m in self.list_models()]
 
     def chat(
         self,

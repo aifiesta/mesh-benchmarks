@@ -50,6 +50,14 @@ def brand_of(model_id: str) -> str | None:
     return _PREFIX_TO_BRAND.get(prefix)
 
 
+def _to_float(v: object) -> float | None:
+    """Best-effort float — the /v1/models pricing block sends strings like '0.15000000'."""
+    try:
+        return float(v) if v is not None else None  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass(frozen=True)
 class CatalogModel:
     model_id: str
@@ -126,16 +134,38 @@ def fetch_live_catalog(client, price_map: dict[str, tuple[float, float]] | None 
     by the classifier/benchmark strategies). Brand is inferred from the id prefix.
     """
     price_map = price_map if price_map is not None else price_map_from_sample()
-    ids = client.list_model_ids()  # network call, gated inside MeshClient
+    rows = client.list_models()  # network call, gated inside MeshClient
     models: list[CatalogModel] = []
-    for mid in ids:
-        price = price_map.get(mid)
+    skipped_non_chat = 0
+    for m in rows:
+        mid = str(m["id"])
+        # Route only over CHAT-capable models: the eval sends /chat/completions, so a
+        # video/image/embedding-only model (e.g. luma/ray3-2) would 400 and abort the run.
+        # `supports_completions_api` is authoritative; a MISSING flag is treated as
+        # chat-capable (fail-open) so a schema change never silently empties the catalog.
+        if m.get("supports_completions_api") is False:
+            skipped_non_chat += 1
+            continue
+        # Prefer REAL prices from the /v1/models pricing block; fall back to the sample map.
+        pr = m.get("pricing") or {}
+        pp = _to_float(pr.get("prompt_usd_per_1m"))
+        cp = _to_float(pr.get("completion_usd_per_1m"))
+        if pp is None or cp is None:
+            fb = price_map.get(mid)
+            if fb:
+                pp = pp if pp is not None else fb[0]
+                cp = cp if cp is not None else fb[1]
         models.append(
             CatalogModel(
                 model_id=mid,
                 brand=brand_of(mid),
-                prompt_usd_per_1m=price[0] if price else None,
-                completion_usd_per_1m=price[1] if price else None,
+                prompt_usd_per_1m=pp,
+                completion_usd_per_1m=cp,
             )
+        )
+    if skipped_non_chat:
+        print(
+            f"[catalog] filtered out {skipped_non_chat} non-chat models "
+            f"(supports_completions_api=False); {len(models)} chat-capable remain"
         )
     return Catalog(models)
