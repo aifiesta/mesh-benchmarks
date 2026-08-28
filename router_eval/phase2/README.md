@@ -32,7 +32,7 @@ python -m router_eval.phase2
 python -m router_eval.phase2 --estimate-only
 
 # LIVE — operator only, with a real key (prompts are PII):
-MESH_API_KEY=sk-... python -m router_eval.phase2 --live --judge-model anthropic/claude-opus-4-8
+MESH_API_KEY=sk-... python -m router_eval.phase2 --live --judge-model anthropic/claude-opus-4.8
 ```
 
 Flags: `--live`, `--estimate-only`, `--judge-model ID`, `--weight-profile {quality_first,

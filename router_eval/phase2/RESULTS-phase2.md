@@ -66,7 +66,7 @@ served model despite the sparse thumbs.
   (`response_raw`), not a fresh call — faithful to "what shipped", but generated at a
   different time/temperature than the strategy answers (a small apples-to-oranges caveat).
 - **Judge caveats.** Single-judge, single-pass, rubric-based; the judge model itself is a
-  variable. Default `anthropic/claude-opus-4-8` (configurable via `--judge-model`); a judge
+  variable. Default `anthropic/claude-opus-4.8` (configurable via `--judge-model`); a judge
   should not grade its own family's answers unchallenged — vary the judge to check.
 - **Cost axis.** Inference cost uses live catalog prices × served/returned token counts; the
   classifier tax is the Phase-1 model. Same plane as Phase 1's `cost+tax`.
@@ -79,7 +79,7 @@ MESH_API_KEY=sk-... python -m router_eval.phase2 --live --estimate-only
 
 # Full live run (inference + judge, cached/deduped):
 MESH_API_KEY=sk-... python -m router_eval.phase2 --live \
-    --judge-model anthropic/claude-opus-4-8
+    --judge-model anthropic/claude-opus-4.8
 
 # Dry run (default; safe, offline, mock providers):
 python -m router_eval.phase2

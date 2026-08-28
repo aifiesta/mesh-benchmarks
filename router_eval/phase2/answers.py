@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from router_eval.phase2.cache import DiskCache, make_key
+from router_eval.phase2.mesh_client import MeshAPIError
 
 
 def _est_tokens(text: str) -> int:
@@ -57,9 +58,23 @@ class LiveAnswerer(Answerer):
 
         def _compute() -> dict:
             self.calls += 1
-            text, usage = self.client.chat(
-                model_id, prompt, max_tokens=self.max_tokens, temperature=self.temperature
-            )
+            try:
+                text, usage = self.client.chat(
+                    model_id, prompt, max_tokens=self.max_tokens, temperature=self.temperature
+                )
+            except MeshAPIError as exc:
+                # A model that can't serve this prompt (capability error, transient 5xx,
+                # rate limit) yields a FAILED answer — empty text the judge scores ~0 —
+                # instead of aborting the whole ~900-call run. The catalog chat-capable
+                # filter should prevent capability errors; this is defence in depth.
+                return {
+                    "answer": "",
+                    "prompt_tokens": _est_tokens(prompt),
+                    "completion_tokens": 0,
+                    "model": model_id,
+                    "failed": True,
+                    "error": str(exc)[:200],
+                }
             return {
                 "answer": text,
                 "prompt_tokens": int(usage.get("prompt_tokens") or _est_tokens(prompt)),

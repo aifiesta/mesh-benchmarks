@@ -12,7 +12,7 @@ LIVE (the operator runs this separately with a real key — the prompts are real
 
 Useful flags:
     --estimate-only      stop after printing the estimate (no answer/judge calls)
-    --judge-model ID     judge model (default anthropic/claude-opus-4-8)
+    --judge-model ID     judge model (default anthropic/claude-opus-4.8)
     --weight-profile P   weighted profile (balanced|quality_first|cost_first|latency_first)
     --seed N             RNG seed for the random baseline
     --out DIR            CSV output dir (default router_eval/phase2/out, gitignored)

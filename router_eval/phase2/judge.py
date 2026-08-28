@@ -18,9 +18,10 @@ import re
 from dataclasses import dataclass, field
 
 from router_eval.phase2.cache import DiskCache, make_key
+from router_eval.phase2.mesh_client import MeshAPIError
 
 # Default judge: a strong model. Configurable via the CLI (--judge-model).
-DEFAULT_JUDGE_MODEL = "anthropic/claude-opus-4-8"
+DEFAULT_JUDGE_MODEL = "anthropic/claude-opus-4.8"
 
 _RUBRIC_SYSTEM = (
     "You are a strict evaluation judge. Score the assistant's answer to the user's "
@@ -76,6 +77,7 @@ class LiveJudge(Judge):
 
     def score(self, prompt: str, answer: str, answered_model: str) -> dict:  # pragma: no cover - live only
         self.calls += 1
+        answer = answer or ""  # a null content / missing served answer must not crash the hash
         key = make_key("judge", self.judge_model, answered_model, prompt, _answer_hash(answer))
 
         def _compute() -> dict:
@@ -83,9 +85,15 @@ class LiveJudge(Judge):
                 f"User request:\n\"\"\"\n{prompt[:4000]}\n\"\"\"\n\n"
                 f"Assistant answer:\n\"\"\"\n{answer[:6000]}\n\"\"\""
             )
-            raw, _usage = self.client.chat(
-                self.judge_model, user, system=_RUBRIC_SYSTEM, max_tokens=200, temperature=0.0,
-            )
+            try:
+                raw, _usage = self.client.chat(
+                    self.judge_model, user, system=_RUBRIC_SYSTEM, max_tokens=200, temperature=0.0,
+                )
+            except MeshAPIError:
+                # A judge call that fails after the client's retries scores as an empty
+                # reply (→ 0.0 in _parse) rather than aborting the whole run. Rare, and
+                # visible as a 0.0 in the output.
+                return {"raw": ""}
             return {"raw": raw}
 
         raw = self.cache.get_or_compute("judge", key, _compute).get("raw", "")
