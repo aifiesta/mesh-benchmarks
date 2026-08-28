@@ -16,12 +16,20 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
 DEFAULT_BASE_URL = "https://api.meshapi.ai/v1"
 API_KEY_ENV = "MESH_API_KEY"
+
+# Retry transient failures (read timeouts, 429, 5xx) a few times with linear backoff.
+# A 4xx like 400 model_capability_not_supported is NOT transient and fails fast.
+_MAX_ATTEMPTS = 3
+_RETRY_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+_BACKOFF_S = 1.5
 
 
 class LiveCallBlocked(RuntimeError):
@@ -39,7 +47,7 @@ class MeshClient:
     api_key: str | None = None
     base_url: str = DEFAULT_BASE_URL
     live: bool = False
-    timeout_s: float = 60.0
+    timeout_s: float = 90.0
 
     @classmethod
     def from_env(cls, *, live: bool, base_url: str = DEFAULT_BASE_URL) -> MeshClient:
@@ -62,33 +70,46 @@ class MeshClient:
         if not self.api_key:
             raise LiveCallBlocked(f"Refusing to {what}: no {API_KEY_ENV}.")
 
+    def _do_request(self, req: urllib.request.Request) -> dict:
+        """Perform an HTTP request, wrapping EVERY transport failure — including bare
+        ``socket.timeout`` (a read timeout is NOT a ``urllib.error.URLError``) — as
+        ``MeshAPIError``, and retrying transient failures (timeouts / 429 / 5xx) with
+        linear backoff. A 4xx (e.g. 400 model_capability) is not transient → fails fast.
+        Wrapping everything is what lets the answerer mark one bad model failed instead
+        of aborting the whole ~1200-call run."""
+        method, url = req.get_method(), req.full_url
+        last: MeshAPIError | None = None
+        for attempt in range(1, _MAX_ATTEMPTS + 1):  # pragma: no cover - live only
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", "replace")[:500]
+                last = MeshAPIError(f"{method} {url} -> {exc.code}: {body}")
+                if exc.code in _RETRY_STATUS and attempt < _MAX_ATTEMPTS:
+                    time.sleep(_BACKOFF_S * attempt)
+                    continue
+                raise last from exc
+            except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
+                last = MeshAPIError(f"{method} {url} transport error: {exc!r}")
+                if attempt < _MAX_ATTEMPTS:
+                    time.sleep(_BACKOFF_S * attempt)
+                    continue
+                raise last from exc
+        raise last  # pragma: no cover - the loop always returns or raises
+
     def _post_json(self, path: str, payload: dict) -> dict:
-        url = f"{self.base_url}{path}"
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data, method="POST")
+        req = urllib.request.Request(
+            f"{self.base_url}{path}", data=json.dumps(payload).encode("utf-8"), method="POST"
+        )
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", f"Bearer {self.api_key}")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:  # pragma: no cover - live only
-            body = exc.read().decode("utf-8", "replace")[:500]
-            raise MeshAPIError(f"POST {path} -> {exc.code}: {body}") from exc
-        except urllib.error.URLError as exc:  # pragma: no cover - live only
-            raise MeshAPIError(f"POST {path} transport error: {exc}") from exc
+        return self._do_request(req)  # pragma: no cover - live only
 
     def _get_json(self, path: str) -> dict:
-        url = f"{self.base_url}{path}"
-        req = urllib.request.Request(url, method="GET")
+        req = urllib.request.Request(f"{self.base_url}{path}", method="GET")
         req.add_header("Authorization", f"Bearer {self.api_key}")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:  # pragma: no cover - live only
-            body = exc.read().decode("utf-8", "replace")[:500]
-            raise MeshAPIError(f"GET {path} -> {exc.code}: {body}") from exc
-        except urllib.error.URLError as exc:  # pragma: no cover - live only
-            raise MeshAPIError(f"GET {path} transport error: {exc}") from exc
+        return self._do_request(req)  # pragma: no cover - live only
 
     # ── OpenAI-compatible surface ────────────────────────────────────────────────
     def list_models(self) -> list[dict]:
@@ -126,7 +147,21 @@ class MeshClient:
             "temperature": temperature,
             "stream": False,
         }
-        body = self._post_json("/chat/completions", payload)  # pragma: no cover - live only
+        try:  # pragma: no cover - live only
+            body = self._post_json("/chat/completions", payload)
+        except MeshAPIError as exc:
+            # Some models reject a specific sampling param outright (reasoning models:
+            # "temperature is deprecated"; o-series: max_tokens). Drop the named param(s)
+            # and retry ONCE, rather than dropping the model from the eval entirely.
+            msg = str(exc).lower()
+            dropped = [p for p in ("temperature", "max_tokens", "top_p") if p in msg and p in payload]
+            if not dropped:
+                raise
+            for p in dropped:
+                payload.pop(p, None)
+            body = self._post_json("/chat/completions", payload)
         choices = body.get("choices") or []
-        content = (choices[0].get("message") or {}).get("content", "") if choices else ""
+        # A model can return message.content = null (empty completion, refusal, tool-only
+        # reply). `.get("content", "")` returns None for an explicit null — coerce to "".
+        content = ((choices[0].get("message") or {}).get("content") or "") if choices else ""
         return content, (body.get("usage") or {})
