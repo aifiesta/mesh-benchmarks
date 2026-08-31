@@ -334,9 +334,19 @@ class WeightedPolicy(Policy):
     pays_classifier_call = True  # reuses benchmark's classifier (same model + cost)
     classifier_model_id = BENCHMARK_CLASSIFIER_MODEL
 
-    def __init__(self, tier: str = "premium", profile: str = DEFAULT_PROFILE) -> None:
+    def __init__(
+        self,
+        tier: str = "premium",
+        profile: str = DEFAULT_PROFILE,
+        weights: Weights | None = None,
+    ) -> None:
         self.tier = tier
         self.profile = profile if profile in WEIGHT_PROFILES else DEFAULT_PROFILE
+        # Optional EXPLICIT weight override, used only by the offline frontier sweep
+        # (MESH-644 tuning). When None (every production/replay caller), the frozen
+        # named-profile vector is used, so production behaviour is unchanged. The
+        # sweep passes an arbitrary Weights to trace the quality/cost frontier.
+        self.weights: Weights = weights if weights is not None else WEIGHT_PROFILES[self.profile]
         self.mean_cost: dict[str, float] = {}
         self._benchmark = BenchmarkPolicy(tier=tier)
 
@@ -354,7 +364,7 @@ class WeightedPolicy(Policy):
         pool = ranked_routerbench_models(item.task, candidates, tier=self.tier)
         if not pool:
             return self._benchmark.pick(item, candidates, rng)  # abstain → benchmark
-        ranked = score_pool_quality_cost(pool, self.mean_cost, WEIGHT_PROFILES[self.profile])
+        ranked = score_pool_quality_cost(pool, self.mean_cost, self.weights)
         return ranked[0]
 
 
