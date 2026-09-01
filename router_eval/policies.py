@@ -242,12 +242,15 @@ class Weights(NamedTuple):
     l: float  # latency  # noqa: E741
 
 
-# FROZEN first-draft profiles, verbatim from routersvc weighted_strategy.WEIGHT_PROFILES.
+# Mirrors the gateway's weighted_strategy.WEIGHT_PROFILES. These are the TUNED vectors
+# (the first drafts were 0.70/0.15/0.15, 0.40/0.30/0.30, 0.20/0.65/0.15, 0.25/0.15/0.60).
+# This copy drifted once already — the gateway was tuned while the harness kept the drafts,
+# so a profile sweep here silently measured the wrong numbers. Keep it in lock-step.
 WEIGHT_PROFILES: dict[str, Weights] = {
-    "quality_first": Weights(0.70, 0.15, 0.15),
-    "balanced": Weights(0.40, 0.30, 0.30),  # default
-    "cost_first": Weights(0.20, 0.65, 0.15),
-    "latency_first": Weights(0.25, 0.15, 0.60),
+    "quality_first": Weights(0.75, 0.15, 0.10),
+    "balanced": Weights(0.40, 0.35, 0.25),  # default
+    "cost_first": Weights(0.15, 0.70, 0.15),
+    "latency_first": Weights(0.15, 0.25, 0.60),
 }
 DEFAULT_PROFILE = "balanced"
 _LOG_EPSILON = 1e-6  # guards log10(0) for a free model
