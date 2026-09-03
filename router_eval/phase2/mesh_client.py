@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -25,11 +26,41 @@ from dataclasses import dataclass
 DEFAULT_BASE_URL = "https://api.meshapi.ai/v1"
 API_KEY_ENV = "MESH_API_KEY"
 
-# Retry transient failures (read timeouts, 429, 5xx) a few times with linear backoff.
+# Retry transient failures (read timeouts, 429, 5xx) with linear backoff.
 # A 4xx like 400 model_capability_not_supported is NOT transient and fails fast.
-_MAX_ATTEMPTS = 3
+# 429 needs MORE attempts than a transport blip: at scale (~700 prompts x 7 strategies)
+# the run is rate-limit bound for its whole duration, not just unlucky once.
+_MAX_ATTEMPTS = 8          # for retryable HTTP statuses (429/5xx) — waiting helps
+_MAX_TRANSPORT_ATTEMPTS = 2  # for timeouts/transport hangs — waiting only burns a worker
 _RETRY_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 _BACKOFF_S = 1.5
+
+# Client-side throttle. The eval key is capped at 100 req/min server-side; without a
+# limiter a large run spends its retry budget getting 429s instead of doing work. Keep a
+# safety margin under the cap, and count EVERY request (classify, answer, judge) since
+# they share the key. Single-threaded harness, so a plain timestamp window is enough.
+_RPM_LIMIT = 85
+_recent_calls: list[float] = []
+# The pipeline fans requests out across a thread pool, so the window is shared mutable
+# state — without this lock two threads can both see room and both issue, drifting over
+# the server-side cap and earning 429s.
+_throttle_lock = threading.Lock()
+
+
+def _throttle() -> None:
+    """Block until issuing one more request stays under _RPM_LIMIT in the last 60s.
+    Thread-safe: the sleep happens OUTSIDE the lock so waiters don't serialise."""
+    while True:
+        with _throttle_lock:
+            now = time.monotonic()
+            cutoff = now - 60.0
+            while _recent_calls and _recent_calls[0] < cutoff:
+                _recent_calls.pop(0)
+            if len(_recent_calls) < _RPM_LIMIT:
+                _recent_calls.append(now)
+                return
+            sleep_for = 60.0 - (now - _recent_calls[0]) + 0.05
+        time.sleep(max(sleep_for, 0.05))
 
 
 class LiveCallBlocked(RuntimeError):
@@ -47,7 +78,7 @@ class MeshClient:
     api_key: str | None = None
     base_url: str = DEFAULT_BASE_URL
     live: bool = False
-    timeout_s: float = 90.0
+    timeout_s: float = 60.0
 
     @classmethod
     def from_env(cls, *, live: bool, base_url: str = DEFAULT_BASE_URL) -> MeshClient:
@@ -81,6 +112,7 @@ class MeshClient:
         last: MeshAPIError | None = None
         for attempt in range(1, _MAX_ATTEMPTS + 1):  # pragma: no cover - live only
             try:
+                _throttle()
                 with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310
                     return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
@@ -92,7 +124,9 @@ class MeshClient:
                 raise last from exc
             except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
                 last = MeshAPIError(f"{method} {url} transport error: {exc!r}")
-                if attempt < _MAX_ATTEMPTS:
+                # A hung upstream does NOT get the full retry budget: at a 60s timeout,
+                # 8 attempts pins one pool worker for 8 minutes and starves the run.
+                if attempt < _MAX_TRANSPORT_ATTEMPTS:
                     time.sleep(_BACKOFF_S * attempt)
                     continue
                 raise last from exc

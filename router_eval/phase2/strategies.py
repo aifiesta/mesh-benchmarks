@@ -23,6 +23,7 @@ live classifier-call estimate (deduped by content, as prod caches classify).
 
 from __future__ import annotations
 
+import hashlib
 import random
 from dataclasses import dataclass
 
@@ -35,7 +36,11 @@ from router_eval.phase2.classifier import (
     ClassifierBackend,
 )
 from router_eval.phase2.routing_data import (
+    V4,
+    V7,
+    V8,
     BRAND_PREMIUM,
+    RoutingData,
     conversation_standard_model,
     ranked_models_for_category,
     resolve_benchmark_model,
@@ -90,12 +95,36 @@ class AlwaysPremiumStrategy(Phase2Strategy):
 
 # ── Classifying strategies ─────────────────────────────────────────────────────
 class BenchmarkStrategy(Phase2Strategy):
+    """classify → rank → top brand's tier model. Parameterised by routing-data version so
+    the SAME implementation can be run for v4 (what production serves) and v7 (the
+    MESH-232 coverage expansion) — the two differ only in their data, which is exactly
+    what the A/B is meant to isolate."""
+
     name = "benchmark"
+
+    def __init__(self, data: RoutingData = V4, name: str | None = None) -> None:
+        self.data = data
+        if name is not None:
+            self.name = name
+
+    @staticmethod
+    def _tie_rng(prompt: str) -> random.Random:
+        """A tie-break RNG seeded from the PROMPT, not from the shared run RNG.
+
+        This is what makes v4-vs-v7 a paired comparison. With one shared RNG the two
+        arms consume draws in interleaved sequence, so they pick different models on the
+        same prompt even in categories where their tier-1 groups are IDENTICAL — the
+        measured difference then mixes the data change with pure tie-break noise. Seeding
+        per prompt means an unchanged tie-group yields the SAME pick in both arms, and a
+        difference can only come from the routing data."""
+        return random.Random(hashlib.sha256(prompt.encode("utf-8", "replace")).hexdigest())
 
     def pick(self, prompt: str, ctx: RouteContext) -> str | None:
         ids = set(ctx.catalog.ids())
         category, mode = ctx.classifier.category(prompt)
-        chosen = resolve_benchmark_model(category, mode, ids)
+        # Mirrors the gateway's random.choice among equally-ranked tier-1 brands, but
+        # seeded per prompt so the two data versions stay paired (see _tie_rng).
+        chosen = resolve_benchmark_model(category, mode, ids, self.data, self._tie_rng(prompt))
         if chosen is not None:
             return chosen
         default = BRAND_PREMIUM.get("chatgpt")
@@ -165,14 +194,25 @@ class RegistryStrategy(Phase2Strategy):
         return [MODEL_CLASSIFIER_MODEL]
 
 
-def build_strategies(weight_profile: str = "balanced") -> list[Phase2Strategy]:
-    """The full strategy set Phase 2 evaluates (no oracle — see module docstring)."""
-    return [
+def build_strategies(
+    weight_profile: str = "balanced", *, real_only: bool = False
+) -> list[Phase2Strategy]:
+    """`real_only` drops the random/always_* baselines. They are corrupted by the
+    catalog's unservable models (documented in RESULTS), and at n=692 they account for
+    most unique (prompt, model) pairs — i.e. most of the judge spend — for numbers we
+    do not use. The four real strategies + the served reference answer the question."""
+    _base = {'random','always_cheapest','always_premium'}
+    _all = [
         RandomStrategy(),
         AlwaysCheapestStrategy(),
         AlwaysPremiumStrategy(),
         BenchmarkStrategy(),
+        # The MESH-232 candidate: identical strategy, v7 data. Runs alongside `benchmark`
+        # so both see the same prompts, the same catalog and the same judge.
+        BenchmarkStrategy(data=V7, name="benchmark_v7"),
+        BenchmarkStrategy(data=V8, name="benchmark_v8"),
         HeuristicStrategy(),
         WeightedStrategy(profile=weight_profile),
         RegistryStrategy(),
     ]
+    return [s for s in _all if not (real_only and s.name in _base)]

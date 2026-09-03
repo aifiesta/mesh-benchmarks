@@ -21,6 +21,14 @@ MeshClient with a key were built.
 
 from __future__ import annotations
 
+import concurrent.futures as _cf
+
+# Concurrent in-flight requests. The MeshClient RPM throttle is the real ceiling;
+# this just stops ~20s-per-call latency from serialising the whole run.
+_POOL = 32
+import os as _os
+_REAL_ONLY = _os.environ.get("PHASE2_REAL_ONLY") == "1"
+
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -243,7 +251,7 @@ class Plan:
 def plan(cfg: PipelineConfig, providers: Providers, traffic: list[TrafficRow]) -> Plan:
     """PICKS + ESTIMATE only. Classifying strategies hit the classifier (real in live),
     but NO inference or judge calls happen — so the estimate can be printed before spend."""
-    strategies = build_strategies(weight_profile=cfg.weight_profile)
+    strategies = build_strategies(weight_profile=cfg.weight_profile, real_only=_REAL_ONLY)
     picks, clf_calls = compute_picks(strategies, traffic, providers, cfg.seed)
     estimate = build_estimate(traffic, picks, clf_calls, providers.catalog)
     return Plan(strategies, picks, clf_calls, estimate)
@@ -258,10 +266,22 @@ def execute(cfg: PipelineConfig, providers: Providers, traffic: list[TrafficRow]
     # ANSWERS: seed served, then generate/cached-fetch every unique (prompt, model).
     _seed_served_answers(traffic, providers.catalog, providers.answerer)
     answers: dict[tuple[int, str], dict] = {}
+    # Fan out the unique (prompt, model) pairs. Each inference is ~20s of WAIT, so a
+    # sequential loop runs at ~3/min and a 4k-pair run would take ~15h. The shared
+    # MeshClient throttle still caps the whole pool under the key's server-side RPM
+    # limit, so concurrency raises utilisation without risking 429s.
+    _todo = []
     for per_prompt in picks.values():
         for i, model in enumerate(per_prompt):
             if model and (i, model) not in answers:
-                answers[(i, model)] = providers.answerer.answer(traffic[i].prompt, model)
+                answers[(i, model)] = None  # reserve the slot so we queue it once
+                _todo.append((i, model))
+    with _cf.ThreadPoolExecutor(max_workers=_POOL) as ex:
+        futs = {ex.submit(providers.answerer.answer, traffic[i].prompt, m): (i, m)
+                for (i, m) in _todo}
+        for fut in _cf.as_completed(futs):
+            i, m = futs[fut]
+            answers[(i, m)] = fut.result()
     # served answers (from response_raw; judged too)
     served_norm = [normalize_served(r.served_model, providers.catalog) for r in traffic]
     for i, row in enumerate(traffic):
@@ -274,10 +294,14 @@ def execute(cfg: PipelineConfig, providers: Providers, traffic: list[TrafficRow]
 
     # JUDGE: one score per unique answer.
     judgments: dict[tuple[int, str], float] = {}
-    for (i, model), ans in answers.items():
-        judgments[(i, model)] = float(
-            providers.judge.score(traffic[i].prompt, ans["answer"], model)["score"]
-        )
+    with _cf.ThreadPoolExecutor(max_workers=_POOL) as ex:
+        jfuts = {
+            ex.submit(providers.judge.score, traffic[i].prompt, ans["answer"], model): (i, model)
+            for (i, model), ans in answers.items()
+        }
+        for fut in _cf.as_completed(jfuts):
+            i, model = jfuts[fut]
+            judgments[(i, model)] = float(fut.result()["score"])
 
     # AGGREGATE per strategy.
     strat_aggs: list[StrategyAggregate] = []

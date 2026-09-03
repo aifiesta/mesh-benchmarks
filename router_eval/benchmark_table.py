@@ -2,7 +2,7 @@
 Frozen SUPERMODE_BENCHMARKS ranking table — ported VERBATIM from routersvc.
 
 Source of truth: routersvc `app/auto_router/benchmarks.py` (routing-data version v1).
-This is the hand-curated ~78-task-category x 10-model-brand table that the
+This is the hand-curated 48-task-category x 10-model-brand table that the
 production `model=auto` `benchmark` strategy uses to rank candidate brands.
 
 We port ONLY the ranking data (the decision logic under test). We deliberately do
@@ -12,8 +12,16 @@ has its own fixed 11-model universe, so the brand -> concrete-model bridge lives
 `routerbench_bridge.py` instead. Everything below is a copy of the frozen table so
 the replay exercises the exact ranking a routing decision would see in prod.
 
-Keep this file in lockstep with the routersvc source if v1 ever changes. As of the
-port it is byte-for-byte identical to the `SUPERMODE_BENCHMARKS` dict there.
+Keep this file in lockstep with the routersvc source if v1 ever changes.
+
+RE-SYNCED 2026-09-03: the port had DRIFTED from routersvc in four "General reasoning /
+Q&A" categories — Closed-book factuality, Decomposition / step-planning and Ambiguity
+handling each demoted `claude` out of tier-1, and Uncertainty calibration ranked
+`chatgpt` ahead of `gemini`. Since the benchmark strategy only ever picks from tier-1,
+three of those four changed which model the baseline arm actually routed to, so every
+`benchmark` number measured before this fix was scored against a table production does
+not run. Now regenerated directly from `app.auto_router.benchmarks.SUPERMODE_BENCHMARKS`
+and verified equal.
 """
 
 from __future__ import annotations
@@ -21,7 +29,7 @@ from __future__ import annotations
 # fmt: off
 SUPERMODE_BENCHMARKS: dict[str, list[str | list[str]]] = {
     "File generation - pdf, docx, pptx, excel": [
-        "claude", ["gemini"],
+        "claude", "gemini", "deepseek",
     ],
     "Creative writing / storytelling - Long-form coherence": [
         "claude", ["chatgpt", "gemini"], "moonshot", "grok", "qwen", "perplexity", "deepseek", "mistral",
@@ -39,22 +47,22 @@ SUPERMODE_BENCHMARKS: dict[str, list[str | list[str]]] = {
         "claude", "chatgpt", "gemini", "moonshot", "qwen", "grok", "deepseek", "bytedance", "perplexity", "mistral",
     ],
     "General reasoning / Q&A - General Conversation, Chatting": [
-        ["claude", "deepseek", "chatgpt", "gemini", "grok", "mistral"], "qwen", "moonshot", "perplexity",
+        ["claude", "chatgpt", "gemini", "grok", "mistral"], "deepseek", "qwen", "moonshot", "perplexity",
     ],
     "General reasoning / Q&A - Closed-book factuality": [
-        ["deepseek", "gemini"], ["claude", "chatgpt"], "qwen", "moonshot", "grok", "perplexity", "bytedance", "mistral",
+        "claude", ["deepseek", "gemini"], "chatgpt", "qwen", "moonshot", "grok", "perplexity", "bytedance", "mistral",
     ],
     "General reasoning / Q&A - Decomposition / step-planning": [
-        ["gemini", "deepseek"], "chatgpt", "claude", "moonshot", "qwen", "grok", "perplexity", "mistral", "bytedance",
+        "claude", ["gemini", "deepseek"], "chatgpt", "moonshot", "qwen", "grok", "perplexity", "mistral", "bytedance",
     ],
     "General reasoning / Q&A - Numerical reliability": [
         "deepseek", ["moonshot", "chatgpt"], "claude", ["qwen", "gemini"], "grok", "bytedance", "perplexity", "mistral",
     ],
     "General reasoning / Q&A - Ambiguity handling": [
-        ["chatgpt", "gemini"], "claude", "moonshot", "qwen", "deepseek", "grok", "perplexity", "mistral", "bytedance",
+        "claude", ["chatgpt", "gemini"], "moonshot", "qwen", "deepseek", "grok", "perplexity", "mistral", "bytedance",
     ],
     "General reasoning / Q&A - Uncertainty calibration": [
-        "chatgpt", "gemini", "claude", "moonshot", "qwen", "deepseek", "perplexity", "grok", "mistral", "bytedance",
+        "gemini", "claude", "chatgpt", "moonshot", "qwen", "deepseek", "perplexity", "grok", "mistral", "bytedance",
     ],
     "Coding - Bug localization & debugging": [
         ["chatgpt", "claude"], ["deepseek", "gemini"], "qwen", "moonshot", "grok", "perplexity", "mistral", "bytedance",
@@ -132,19 +140,19 @@ SUPERMODE_BENCHMARKS: dict[str, list[str | list[str]]] = {
         ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "perplexity", "qwen",
     ],
     "Web research / citations - Freshness (recency)": [
-        ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "perplexity", "qwen",
+        "perplexity", ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "qwen",
     ],
     "Web research / citations - Inline code-check / quick run": [
         ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "perplexity", "qwen",
     ],
     "Web research / citations - News": [
-        ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "perplexity", "qwen",
+        "perplexity", ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "qwen",
     ],
     "Web research / citations - Recent Topics/Latest Information": [
-        ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "perplexity", "qwen",
+        "perplexity", ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "qwen",
     ],
     "Web research / citations - currency": [
-        ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "perplexity", "qwen",
+        "perplexity", ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "qwen",
     ],
     "Web research / citations - time": [
         ["chatgpt", "gemini", "claude", "grok"], "deepseek", "moonshot", "mistral", "bytedance", "perplexity", "qwen",

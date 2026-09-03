@@ -176,14 +176,17 @@ def test_estimate_dedupes_and_counts(traffic, catalog):
     providers = Providers(catalog, MockClassifier(), MockAnswerer(), MockJudge())
     p = plan(PipelineConfig(), providers, traffic)
     est = p.estimate
-    assert est.n_prompts == 5 and est.n_strategies == 7
+    # Derived, not hardcoded: adding a strategy (e.g. benchmark_v7) must not fail this
+    # test for a reason that has nothing to do with dedupe/estimate arithmetic.
+    n_strategies = len(build_strategies())
+    assert est.n_prompts == 5 and est.n_strategies == n_strategies
     # benchmark + weighted (+ heuristic misses) all classify with gpt-4o-mini, deduped by
     # content → at most one per prompt; registry adds gemini per prompt.
     assert est.classifier_calls_by_model["google/gemini-3-flash-preview"] == 5
     assert est.classifier_calls_by_model["openai/gpt-4o-mini"] == 5
     assert est.classifier_calls == 10
     # inference calls are deduped and never exceed strategies × prompts.
-    assert 0 < est.live_inference_calls <= 7 * 5
+    assert 0 < est.live_inference_calls <= n_strategies * 5
     assert est.judge_calls >= est.live_inference_calls
     assert est.total_live_calls == est.live_inference_calls + est.judge_calls + est.classifier_calls
 
@@ -202,7 +205,8 @@ def test_dry_run_pipeline_end_to_end(traffic, catalog, tmp_path):
     result = run_pipeline(PipelineConfig(out_dir=tmp_path), providers, traffic)
     names = {s.name for s in result.strategies}
     assert names == {"random", "always_cheapest", "always_premium",
-                     "benchmark", "heuristic", "weighted", "registry"}
+                     "benchmark", "benchmark_v7", "benchmark_v8", "heuristic",
+                     "weighted", "registry"}
     for s in result.strategies:
         assert s.n == 5
         assert 0.0 <= s.mean_judge_score <= 1.0
@@ -238,3 +242,116 @@ def test_mock_judge_scores_empty_low_and_bounded():
     assert j.score("q", "", "m")["score"] == 0.0
     s = j.score("q", "a real answer of some length", "m")["score"]
     assert 0.0 <= s <= 1.0
+
+
+# ── Routing data: v4 vs v7, and the tie-break rule ──────────────────────────────
+def test_resolve_picks_randomly_among_tier1_ties_like_the_gateway():
+    """The gateway's resolve_from_benchmark_category does `random.choice` over the
+    tier-1 tie-group. Taking sorted(...)[0] instead collapses every tie to one member,
+    which under-samples the reachable pool AND makes a version that ADDS brands to
+    tie-groups look like it changed almost nothing. Any A/B over tie-group membership
+    depends on this."""
+    from router_eval.phase2.routing_data import V4, resolve_benchmark_model
+
+    cat = "General reasoning / Q&A - General Conversation, Chatting"
+    tier1 = V4.benchmarks[cat][0]
+    expected = {V4.brand_premium[b] for b in tier1}
+    catalog = set(V4.brand_premium.values())
+
+    rng = random.Random(7)
+    got = {resolve_benchmark_model(cat, "premium", catalog, V4, rng) for _ in range(300)}
+    assert got == expected, "random tie-break must reach every tier-1 brand"
+
+    # rng=None keeps the deterministic first-of-tie behaviour.
+    fixed = {resolve_benchmark_model(cat, "premium", catalog, V4) for _ in range(10)}
+    assert len(fixed) == 1 and fixed <= expected
+
+
+def test_v7_picks_the_same_winners_as_v4_but_offers_a_deeper_pool():
+    """v7 is a POOL expansion, not a re-ranking: its tier-1 is identical to v4's, so the
+    benchmark strategy's WINNER is unchanged, while ranked_models_for_category (the
+    fallover alternates and the weighted pool) gets strictly deeper.
+
+    Tier-1 promotion was tried and measured WORSE than v4 on 692 real prompts
+    (-0.0889 judged, p<0.0001), which is why the winner must not move."""
+    from router_eval.phase2.routing_data import V4, V7, resolve_benchmark_model, ranked_models_for_category
+
+    catalog = (
+        set(V4.brand_premium.values()) | set(V4.brand_standard.values())
+        | set(V7.brand_premium.values()) | set(V7.brand_standard.values())
+    )
+    deeper = 0
+    for cat in V4.benchmarks:
+        for mode in ("premium", "standard"):
+            rng4, rng7 = random.Random(11), random.Random(11)
+            for _ in range(30):
+                assert resolve_benchmark_model(cat, mode, catalog, V4, rng4) == \
+                       resolve_benchmark_model(cat, mode, catalog, V7, rng7), f"{cat}/{mode}"
+            p4 = ranked_models_for_category(cat, mode, catalog, V4)
+            p7 = ranked_models_for_category(cat, mode, catalog, V7)
+            assert set(p4) <= set(p7), f"{cat}/{mode} lost a v4 model"
+            if len(p7) > len(p4):
+                deeper += 1
+    assert deeper >= 60, f"only {deeper} (category, mode) pools got deeper"
+
+
+def test_v7_is_derived_over_v4_and_never_drops_a_v4_brand():
+    from router_eval.phase2.routing_data import V4, V7
+
+    for tier in ("brand_premium", "brand_standard"):
+        v4_map, v7_map = getattr(V4, tier), getattr(V7, tier)
+        for brand, model in v4_map.items():
+            assert v7_map[brand] == model, f"{tier}[{brand}] changed"
+    # Web-research categories are untouched (the web-capability guarantee).
+    for cat in (c for c in V7.benchmarks if c.startswith("Web research / citations")):
+        assert V7.benchmarks[cat] == V4.benchmarks[cat], cat
+
+
+def test_v8_moves_the_pick_only_where_standard_grok_was_chosen():
+    """v8 is the mirror of v7: a POOL of the same size, but the WINNER moves — and only
+    in standard mode, only where `grok` wins the tie-group.
+
+    v4 routes the `grok` standard tier to `xai/grok-4.1-fast-non-reasoning`, which is
+    failing production traffic (42.7% success in September). v8 aliases that tier to the
+    premium `x-ai/grok-4.20`. Premium mode must be untouched, because `grok`'s premium
+    model already IS the replacement."""
+    from router_eval.phase2.routing_data import V4, V8, resolve_benchmark_model
+
+    dead, fix = "xai/grok-4.1-fast-non-reasoning", "x-ai/grok-4.20"
+    catalog = (
+        set(V4.brand_premium.values()) | set(V4.brand_standard.values())
+        | set(V8.brand_premium.values()) | set(V8.brand_standard.values())
+    )
+    moved = 0
+    for cat in V4.benchmarks:
+        for mode in ("premium", "standard"):
+            rng4, rng8 = random.Random(11), random.Random(11)
+            for _ in range(30):
+                p4 = resolve_benchmark_model(cat, mode, catalog, V4, rng4)
+                p8 = resolve_benchmark_model(cat, mode, catalog, V8, rng8)
+                if p4 == p8:
+                    continue
+                # The ONLY difference v8 may produce is this one swap, in standard mode.
+                assert mode == "standard", f"{cat}: premium must not move"
+                assert (p4, p8) == (dead, fix), f"{cat}/{mode}: unexpected swap {p4}->{p8}"
+                moved += 1
+    assert moved > 0, "v8 never moved the pick — the repair is unreachable"
+
+
+def test_v8_retires_the_failing_model_and_changes_nothing_else():
+    from router_eval.phase2.routing_data import V4, V8
+
+    dead = "xai/grok-4.1-fast-non-reasoning"
+    assert V4.brand_standard["grok"] == dead, "v4's defect moved — re-read v8"
+    assert dead not in V8.brand_standard.values()
+    assert dead not in V8.brand_premium.values()
+    # Same-brand alias: standard grok IS premium grok, so no tie-group is re-weighted.
+    assert V8.brand_standard["grok"] == V8.brand_premium["grok"]
+    # Everything else is v4's, byte-for-byte — that is what makes the A/B interpretable.
+    assert V8.benchmarks == V4.benchmarks
+    assert V8.brand_premium == V4.brand_premium
+    differing = {
+        b for b in set(V4.brand_standard) | set(V8.brand_standard)
+        if V4.brand_standard.get(b) != V8.brand_standard.get(b)
+    }
+    assert differing == {"grok"}, differing
