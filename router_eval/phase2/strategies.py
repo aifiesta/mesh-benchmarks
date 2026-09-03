@@ -165,9 +165,13 @@ class RegistryStrategy(Phase2Strategy):
         return [MODEL_CLASSIFIER_MODEL]
 
 
-def build_strategies(weight_profile: str = "balanced") -> list[Phase2Strategy]:
-    """The full strategy set Phase 2 evaluates (no oracle — see module docstring)."""
-    return [
+def build_strategies(weight_profile: str = "balanced", *, real_only: bool = False) -> list[Phase2Strategy]:
+    """`real_only` drops the random/always_* baselines. They are corrupted by the
+    catalog's unservable models (documented in RESULTS), and at n=692 they account for
+    most unique (prompt, model) pairs — i.e. most of the judge spend — for numbers we
+    do not use. The four real strategies + the served reference answer the question."""
+    _base = {'random','always_cheapest','always_premium'}
+    _all = [
         RandomStrategy(),
         AlwaysCheapestStrategy(),
         AlwaysPremiumStrategy(),
@@ -176,3 +180,4 @@ def build_strategies(weight_profile: str = "balanced") -> list[Phase2Strategy]:
         WeightedStrategy(profile=weight_profile),
         RegistryStrategy(),
     ]
+    return [s for s in _all if not (real_only and s.name in _base)]
