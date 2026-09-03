@@ -266,26 +266,32 @@ def test_resolve_picks_randomly_among_tier1_ties_like_the_gateway():
     assert len(fixed) == 1 and fixed <= expected
 
 
-def test_v7_reaches_strictly_more_models_than_v4():
-    from router_eval.phase2.routing_data import V4, V7, resolve_benchmark_model
+def test_v7_picks_the_same_winners_as_v4_but_offers_a_deeper_pool():
+    """v7 is a POOL expansion, not a re-ranking: its tier-1 is identical to v4's, so the
+    benchmark strategy's WINNER is unchanged, while ranked_models_for_category (the
+    fallover alternates and the weighted pool) gets strictly deeper.
 
-    catalog = set(V4.brand_premium.values()) | set(V4.brand_standard.values()) | set(
-        V7.brand_premium.values()
-    ) | set(V7.brand_standard.values())
+    Tier-1 promotion was tried and measured WORSE than v4 on 692 real prompts
+    (-0.0889 judged, p<0.0001), which is why the winner must not move."""
+    from router_eval.phase2.routing_data import V4, V7, resolve_benchmark_model, ranked_models_for_category
 
-    def reachable(data):
-        rng = random.Random(11)
-        out = set()
-        for cat in data.benchmarks:
-            for mode in ("premium", "standard"):
-                for _ in range(40):
-                    m = resolve_benchmark_model(cat, mode, catalog, data, rng)
-                    if m:
-                        out.add(m)
-        return out
-
-    v4_reach, v7_reach = reachable(V4), reachable(V7)
-    assert v4_reach < v7_reach, "v7 must strictly expand the reachable set"
+    catalog = (
+        set(V4.brand_premium.values()) | set(V4.brand_standard.values())
+        | set(V7.brand_premium.values()) | set(V7.brand_standard.values())
+    )
+    deeper = 0
+    for cat in V4.benchmarks:
+        for mode in ("premium", "standard"):
+            rng4, rng7 = random.Random(11), random.Random(11)
+            for _ in range(30):
+                assert resolve_benchmark_model(cat, mode, catalog, V4, rng4) == \
+                       resolve_benchmark_model(cat, mode, catalog, V7, rng7), f"{cat}/{mode}"
+            p4 = ranked_models_for_category(cat, mode, catalog, V4)
+            p7 = ranked_models_for_category(cat, mode, catalog, V7)
+            assert set(p4) <= set(p7), f"{cat}/{mode} lost a v4 model"
+            if len(p7) > len(p4):
+                deeper += 1
+    assert deeper >= 60, f"only {deeper} (category, mode) pools got deeper"
 
 
 def test_v7_is_derived_over_v4_and_never_drops_a_v4_brand():

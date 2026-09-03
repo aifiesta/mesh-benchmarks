@@ -1,0 +1,9 @@
+metric,value
+n_prompts,692
+n_strategies,5
+unique_inference_pairs,1962
+seeded_served_pairs,241
+live_inference_calls,1721
+judge_calls,2413
+classifier_calls,1384
+total_live_calls,5518

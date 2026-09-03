@@ -151,24 +151,22 @@ BRAND_STANDARD_V7: dict[str, str] = {
 _V7_RANKING_OVERRIDES: dict[str, list] = {
     "File generation - pdf, docx, pptx, excel": [
         [
-            "deepseek",
-            "deepseekv4"
+            "deepseek"
         ],
         [
             "gemini",
-            "claude5"
+            "claude5",
+            "deepseekv4"
         ],
         "claude"
     ],
     "Creative writing / storytelling - Long-form coherence": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
             "gemini",
-            "kimi26"
+            "kimi26",
+            "claude5"
         ],
         [
             "moonshot",
@@ -182,13 +180,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "mistral"
     ],
     "Creative writing / storytelling - Voice mimicry / style control": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "grok",
-            "kimi26"
+            "kimi26",
+            "claude5"
         ],
         [
             "chatgpt",
@@ -203,14 +199,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "mistral"
     ],
     "Creative writing / storytelling - Character & world consistency": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "gemini",
             "chatgpt",
-            "kimi26"
+            "kimi26",
+            "claude5"
         ],
         [
             "moonshot",
@@ -224,13 +218,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "mistral"
     ],
     "Creative writing / storytelling - Instruction adherence": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "deepseek",
-            "llama"
+            "llama",
+            "claude5"
         ],
         [
             "chatgpt",
@@ -245,13 +237,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Creative writing / storytelling- Revision quality": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
-            "kimi26"
+            "kimi26",
+            "claude5"
         ],
         [
             "gemini",
@@ -272,14 +262,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
             "chatgpt",
             "gemini",
             "grok",
-            "mistral",
-            "claude5",
-            "kimi26"
+            "mistral"
         ],
         [
             "qwen",
             "hunyuan",
-            "llama"
+            "llama",
+            "claude5",
+            "kimi26"
         ],
         [
             "moonshot",
@@ -290,15 +280,13 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "perplexity"
     ],
     "General reasoning / Q&A - Closed-book factuality": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "deepseek",
             "gemini",
             "glm",
-            "cohere"
+            "cohere",
+            "claude5"
         ],
         [
             "chatgpt",
@@ -312,15 +300,13 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "mistral"
     ],
     "General reasoning / Q&A - Decomposition / step-planning": [
-        [
-            "claude",
-            "claude5",
-            "deepseekv4"
-        ],
+        "claude",
         [
             "gemini",
             "deepseek",
-            "gptoss"
+            "gptoss",
+            "claude5",
+            "deepseekv4"
         ],
         [
             "chatgpt",
@@ -335,14 +321,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "General reasoning / Q&A - Numerical reliability": [
-        [
-            "deepseek",
-            "deepseekv4"
-        ],
+        "deepseek",
         [
             "moonshot",
             "chatgpt",
-            "nemotron"
+            "nemotron",
+            "deepseekv4"
         ],
         [
             "claude",
@@ -359,14 +343,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "mistral"
     ],
     "General reasoning / Q&A - Ambiguity handling": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
             "gemini",
-            "kimi26"
+            "kimi26",
+            "claude5"
         ],
         [
             "moonshot",
@@ -381,13 +363,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "General reasoning / Q&A - Uncertainty calibration": [
-        [
-            "gemini",
-            "claude5"
-        ],
+        "gemini",
         [
             "claude",
-            "gptoss"
+            "gptoss",
+            "claude5"
         ],
         [
             "chatgpt",
@@ -405,15 +385,15 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Bug localization & debugging": [
         [
             "chatgpt",
-            "claude",
-            "claude5",
-            "qwencoder"
+            "claude"
         ],
         [
             "deepseek",
             "gemini",
             "deepseekv4",
-            "codestral"
+            "codestral",
+            "claude5",
+            "qwencoder"
         ],
         [
             "qwen",
@@ -428,14 +408,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Repo comprehension (architecture)": [
         [
             "deepseek",
-            "gemini",
-            "claude5"
+            "gemini"
         ],
         [
             "chatgpt",
             "claude",
             "deepseekv4",
-            "qwencoder"
+            "qwencoder",
+            "claude5"
         ],
         [
             "qwen",
@@ -450,15 +430,15 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Feature scaffolding (greenfield)": [
         [
             "chatgpt",
-            "claude",
-            "claude5",
-            "qwencoder"
+            "claude"
         ],
         [
             "deepseek",
             "gemini",
             "codestral",
-            "deepseekv4"
+            "deepseekv4",
+            "claude5",
+            "qwencoder"
         ],
         [
             "qwen",
@@ -473,14 +453,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Migration / translation": [
         [
             "chatgpt",
-            "claude",
-            "codestral",
-            "qwencoder"
+            "claude"
         ],
         [
             "deepseek",
             "gemini",
-            "deepseekv4"
+            "deepseekv4",
+            "codestral",
+            "qwencoder"
         ],
         [
             "qwen",
@@ -495,14 +475,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Test generation & CI scaffolds": [
         [
             "chatgpt",
-            "claude",
-            "claude5",
-            "qwencoder"
+            "claude"
         ],
         [
             "deepseek",
             "gemini",
-            "codestral"
+            "codestral",
+            "claude5",
+            "qwencoder"
         ],
         [
             "qwen",
@@ -517,14 +497,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Algorithmic / competitive programming": [
         [
             "chatgpt",
-            "claude",
-            "deepseekv4",
-            "qwencoder"
+            "claude"
         ],
         [
             "deepseek",
             "gemini",
-            "gpt55"
+            "gpt55",
+            "deepseekv4",
+            "qwencoder"
         ],
         [
             "qwen",
@@ -540,14 +520,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Data/ML notebooks (pandas/NumPy/Torch)": [
         [
             "deepseek",
-            "gemini",
-            "claude5"
+            "gemini"
         ],
         [
             "chatgpt",
             "claude",
             "qwencoder",
-            "deepseekv4"
+            "deepseekv4",
+            "claude5"
         ],
         [
             "qwen",
@@ -562,14 +542,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Constrained output (AST/diff/JSON-only)": [
         [
             "chatgpt",
-            "claude",
-            "codestral"
+            "claude"
         ],
         [
             "deepseek",
             "gemini",
             "cohere",
-            "qwencoder"
+            "qwencoder",
+            "codestral"
         ],
         [
             "qwen",
@@ -584,14 +564,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Coding - Agentic build-run-fix loops": [
         [
             "chatgpt",
-            "claude",
-            "claude5",
-            "qwencoder"
+            "claude"
         ],
         [
             "deepseek",
             "gemini",
-            "deepseekv4"
+            "deepseekv4",
+            "claude5",
+            "qwencoder"
         ],
         [
             "qwen",
@@ -604,14 +584,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Math / logic - Arithmetic & word problems": [
-        [
-            "deepseek",
-            "deepseekv4",
-            "gpt55"
-        ],
+        "deepseek",
         [
             "chatgpt",
-            "nemotron"
+            "nemotron",
+            "deepseekv4",
+            "gpt55"
         ],
         [
             "claude",
@@ -627,14 +605,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Math / logic - Symbolic algebra": [
-        [
-            "deepseek",
-            "deepseekv4",
-            "gpt55"
-        ],
+        "deepseek",
         [
             "qwen",
-            "gptoss"
+            "gptoss",
+            "deepseekv4",
+            "gpt55"
         ],
         [
             "chatgpt",
@@ -649,13 +625,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Math / logic - Combinatorics / graph reasoning": [
-        [
-            "deepseek",
-            "deepseekv4"
-        ],
+        "deepseek",
         [
             "chatgpt",
-            "gpt55"
+            "gpt55",
+            "deepseekv4"
         ],
         [
             "claude",
@@ -671,14 +645,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Math / logic - Proof-like explanations": [
-        [
-            "deepseek",
-            "deepseekv4",
-            "gpt55"
-        ],
+        "deepseek",
         [
             "chatgpt",
-            "gptoss"
+            "gptoss",
+            "deepseekv4",
+            "gpt55"
         ],
         [
             "claude",
@@ -777,13 +749,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Safety / compliance - Refusal precision": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
-            "nova"
+            "nova",
+            "claude5"
         ],
         [
             "gemini",
@@ -798,13 +768,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Safety / compliance - Jailbreak resistance": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
-            "nova"
+            "nova",
+            "claude5"
         ],
         [
             "gemini",
@@ -819,14 +787,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Safety / compliance - PII & privacy handling": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
             "nova",
-            "cohere"
+            "cohere",
+            "claude5"
         ],
         [
             "gemini",
@@ -841,14 +807,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Safety / compliance - Policy following": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
             "nova",
-            "cohere"
+            "cohere",
+            "claude5"
         ],
         [
             "gemini",
@@ -863,13 +827,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "bytedance"
     ],
     "Conversational tone / style - Persona control": [
-        [
-            "claude",
-            "claude5"
-        ],
+        "claude",
         [
             "chatgpt",
-            "kimi26"
+            "kimi26",
+            "claude5"
         ],
         [
             "grok",
@@ -887,12 +849,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Conversational tone / style - Empathy & prosody": [
         [
             "claude",
-            "gemini",
-            "claude5"
+            "gemini"
         ],
         [
             "chatgpt",
-            "hunyuan"
+            "hunyuan",
+            "claude5"
         ],
         [
             "grok",
@@ -909,15 +871,15 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Conversational tone / style - Humor / wit": [
         [
             "claude",
-            "grok",
-            "claude5"
+            "grok"
         ],
         [
             "chatgpt",
             "gemini",
             "moonshot",
             "deepseek",
-            "llama"
+            "llama",
+            "claude5"
         ],
         [
             "qwen",
@@ -931,14 +893,14 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Conversational tone / style - Contextual memory (short-term)": [
         [
             "gemini",
-            "claude",
-            "claude5",
-            "deepseekv4"
+            "claude"
         ],
         [
             "chatgpt",
             "moonshot",
-            "hunyuan"
+            "hunyuan",
+            "claude5",
+            "deepseekv4"
         ],
         [
             "deepseek",
@@ -953,12 +915,12 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     "Conversational tone / style - Long-term persona persistence": [
         [
             "gemini",
-            "claude",
-            "claude5"
+            "claude"
         ],
         [
             "chatgpt",
-            "kimi26"
+            "kimi26",
+            "claude5"
         ],
         [
             "moonshot",

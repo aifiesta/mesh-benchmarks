@@ -23,6 +23,7 @@ live classifier-call estimate (deduped by content, as prod caches classify).
 
 from __future__ import annotations
 
+import hashlib
 import random
 from dataclasses import dataclass
 
@@ -105,12 +106,24 @@ class BenchmarkStrategy(Phase2Strategy):
         if name is not None:
             self.name = name
 
+    @staticmethod
+    def _tie_rng(prompt: str) -> random.Random:
+        """A tie-break RNG seeded from the PROMPT, not from the shared run RNG.
+
+        This is what makes v4-vs-v7 a paired comparison. With one shared RNG the two
+        arms consume draws in interleaved sequence, so they pick different models on the
+        same prompt even in categories where their tier-1 groups are IDENTICAL — the
+        measured difference then mixes the data change with pure tie-break noise. Seeding
+        per prompt means an unchanged tie-group yields the SAME pick in both arms, and a
+        difference can only come from the routing data."""
+        return random.Random(hashlib.sha256(prompt.encode("utf-8", "replace")).hexdigest())
+
     def pick(self, prompt: str, ctx: RouteContext) -> str | None:
         ids = set(ctx.catalog.ids())
         category, mode = ctx.classifier.category(prompt)
-        # ctx.rng (seeded) drives the tie-break, mirroring the gateway's random.choice
-        # among equally-ranked tier-1 brands. Deterministic per seed, so runs reproduce.
-        chosen = resolve_benchmark_model(category, mode, ids, self.data, ctx.rng)
+        # Mirrors the gateway's random.choice among equally-ranked tier-1 brands, but
+        # seeded per prompt so the two data versions stay paired (see _tie_rng).
+        chosen = resolve_benchmark_model(category, mode, ids, self.data, self._tie_rng(prompt))
         if chosen is not None:
             return chosen
         default = BRAND_PREMIUM.get("chatgpt")
