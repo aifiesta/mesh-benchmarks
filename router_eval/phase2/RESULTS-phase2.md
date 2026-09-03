@@ -2,7 +2,8 @@
 
 > **STATUS: re-run 2026-09-03** for MESH-232, judged by `anthropic/claude-sonnet-4-6` on
 > **692 real Mesh prompts**, covering both candidate versions — **v7** (pool expansion,
-> rounds 1–2) and **v8** (the `grok` standard-tier repair, round 3).
+> rounds 1–2), **v8** (the `grok` standard-tier repair, round 3) and **v9** (the
+> composition of the two, round 4).
 > Supersedes the 2026-08-27 n=91 run: two harness defects found
 > since then (below) changed which models the `benchmark` baseline routed to, so the older
 > numbers are not comparable. Raw prompts/answers are PII and are **not** committed
@@ -182,8 +183,64 @@ popularity.
   healthier in July (97.3%) than during this run. A rerun after any upstream quota fix
   would show a smaller delta — which is an argument about *how much* v8 wins by, not
   about whether the incumbent should stay.
-- **v7 and v8 are independent.** Both derive over v4 and neither includes the other;
-  the table above measures each against v4 separately, not the combination.
+- **v7 and v8 are independent; v9 is the combination.** Both derive over v4 and neither
+  includes the other, so rounds 1–3 measure each against v4 separately. Round 4 measures
+  the composition — and finds it identical to v8 on the pick, which is the intended
+  result and means round 4 proves construction, not additional benefit.
+
+## Round 4 — v9, composing v7's pool with v8's repair: v8's pick, v7's pool
+
+v7 and v8 are both derived over v4 and neither contains the other, but **only one routing
+data version can be active at a time**. Shipping only those two would force a choice
+between reaching more models on fallover and not routing standard-mode `grok` to a model
+that fails half its calls. **v9** is the composition:
+
+```python
+_V9_BRAND_STANDARD = {**_V7_BRAND_STANDARD, **_GROK_STANDARD_REPAIR}
+```
+
+One line, because the two changes are disjoint — v7 adds *new* brands at tier-2+ and
+leaves every v4 brand's ids untouched; v8 changes one *existing* brand's standard model.
+So v9's pick should equal v8's and its pool should equal v7's. This arm exists to **check
+that rather than assert it**.
+
+| strategy | n | judge quality | cost/req | distinct models |
+|---|---|---|---|---|
+| benchmark (v4 — production) | 692 | 0.531 | $0.010827 | 8 |
+| benchmark_v7 (pool-only) | 692 | 0.531 | $0.010827 | 8 |
+| benchmark_v8 (grok repair) | 692 | 0.539 | $0.010830 | 8 |
+| **benchmark_v9 (composition)** | 692 | **0.539** | **$0.010830** | 8 |
+| heuristic | 692 | 0.532 | $0.011178 | 8 |
+| weighted | 692 | 0.505 | $0.002920 | 6 |
+| registry | 692 | 0.296 | $0.002839 | 1 |
+| *[served]* | 692 | 0.566 | $0.038701 | — |
+
+Pick-level, comparing every prompt:
+
+```
+benchmark_v8  vs benchmark_v9 :   0 of 692 prompts differ
+benchmark     vs benchmark_v9 :  26 of 692 prompts differ
+benchmark     vs benchmark_v7 :   0 of 692 prompts differ
+
+the 26:  xai/grok-4.1-fast-non-reasoning -> x-ai/grok-4.20   (n=26, one swap)
+```
+
+**v9 is byte-identical to v8 on the pick and carries v7's pool.** So v9 inherits v8's
+measured +0.2223 paired gain (95% CI [+0.1131, +0.3446], p = 0.00073) *by construction*,
+not by a second measurement — the run above is what confirms the construction holds.
+
+The alternate pool is where they diverge, and that is not visible in this table: the
+benchmark strategy only ever picks tier-1, so v7's extra depth shows up in MESH-497
+capability fallover and in the weighted strategy's candidate pool, neither of which this
+run exercises (the same boundary round 2 records for v7 alone).
+
+**v9 is the version to activate.** v8 is the isolated A/B — it is what proves the grok
+swap uncontaminated by v7's pool — and v7 is the measured no-op on the pick. Only v9
+carries both improvements.
+
+> Pool sizes are 43 model ids for v9 and 16 for v8, against v7's 44 and v4's 17: the
+> replacement `x-ai/grok-4.20` was already the *premium* grok, so the alias collapses two
+> ids into one.
 
 ## Reading notes / honest boundaries
 

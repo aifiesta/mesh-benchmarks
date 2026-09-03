@@ -11,6 +11,9 @@ and in the weighted pool, but never the benchmark strategy's pick. Comparing
 `benchmark` (v4) against `benchmark_v7` on the same prompts is what tests whether the
 expansion picks BETTER models or merely different ones.
 
+v9 (MESH-232) composes the two: v7's pool with v8's repair. Its pick should match v8's
+and its pool should match v7's — `benchmark_v9` is the arm that verifies it.
+
 v8 (MESH-232 follow-up) is a one-entry repair over v4: the `grok` STANDARD model,
 `xai/grok-4.1-fast-non-reasoning`, is failing production traffic, and v8 replaces it
 with an alias to the premium `x-ai/grok-4.20`. Unlike v7 it is expected to MOVE the
@@ -985,6 +988,23 @@ V7 = RoutingData("v7", V7_BENCHMARKS, BRAND_PREMIUM_V7, BRAND_STANDARD_V7)
 BRAND_STANDARD_V8: dict[str, str] = {**BRAND_STANDARD, "grok": "x-ai/grok-4.20"}
 
 V8 = RoutingData("v8", V4_BENCHMARKS, BRAND_PREMIUM, BRAND_STANDARD_V8)
+
+# ── v9 — v7's expanded pool WITH v8's grok repair (MESH-232) ─────────────────────
+# GENERATED from routersvc `app/auto_router/versions.py::V9` — keep in lockstep.
+#
+# v7 and v8 are both derived over v4 and neither contains the other, but only ONE data
+# version can be active at a time — so shipping just those two forces a choice between
+# reaching more models on fallover (v7) and not routing standard-mode grok to a model
+# that fails half its calls (v8). v9 is the composition that removes the choice.
+#
+# The derivation is one line because the changes are disjoint: v7 adds NEW brands at
+# tier-2+ and leaves every v4 brand's ids alone; v8 changes ONE existing brand's
+# standard model. So v9's PICK should equal v8's (v7's tier-1 is v4's) and its POOL
+# should equal v7's. This arm exists to CHECK that rather than assert it — it is the
+# live counterpart to the gateway's `test_v9_pick_is_identical_to_v8s`.
+BRAND_STANDARD_V9: dict[str, str] = {**BRAND_STANDARD_V7, "grok": "x-ai/grok-4.20"}
+
+V9 = RoutingData("v9", V7_BENCHMARKS, BRAND_PREMIUM_V7, BRAND_STANDARD_V9)
 
 
 def _brand_map(mode: str) -> dict[str, str]:

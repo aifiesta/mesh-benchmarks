@@ -205,8 +205,8 @@ def test_dry_run_pipeline_end_to_end(traffic, catalog, tmp_path):
     result = run_pipeline(PipelineConfig(out_dir=tmp_path), providers, traffic)
     names = {s.name for s in result.strategies}
     assert names == {"random", "always_cheapest", "always_premium",
-                     "benchmark", "benchmark_v7", "benchmark_v8", "heuristic",
-                     "weighted", "registry"}
+                     "benchmark", "benchmark_v7", "benchmark_v8",
+                     "benchmark_v9", "heuristic", "weighted", "registry"}
     for s in result.strategies:
         assert s.n == 5
         assert 0.0 <= s.mean_judge_score <= 1.0
@@ -355,3 +355,50 @@ def test_v8_retires_the_failing_model_and_changes_nothing_else():
         if V4.brand_standard.get(b) != V8.brand_standard.get(b)
     }
     assert differing == {"grok"}, differing
+
+
+def test_v9_composes_v7s_pool_with_v8s_pick():
+    """v9 = v7's pool + v8's repair, and the composition must be exactly that.
+
+    v7's tier-1 is v4's, so v7 contributes nothing to the pick; v8 changes one standard
+    model and adds nothing to the pool. So v9's WINNER must equal v8's everywhere, and
+    its POOL must equal v7's. This is the offline counterpart to the live run, where
+    benchmark_v9 matched benchmark_v8 on all 692 prompts."""
+    from router_eval.phase2.routing_data import (
+        V4, V7, V8, V9, ranked_models_for_category, resolve_benchmark_model,
+    )
+
+    catalog = set()
+    for v in (V4, V7, V8, V9):
+        catalog |= set(v.brand_premium.values()) | set(v.brand_standard.values())
+
+    deeper = 0
+    for cat in V4.benchmarks:
+        for mode in ("premium", "standard"):
+            rng8, rng9 = random.Random(23), random.Random(23)
+            for _ in range(30):
+                assert resolve_benchmark_model(cat, mode, catalog, V8, rng8) == \
+                       resolve_benchmark_model(cat, mode, catalog, V9, rng9), f"{cat}/{mode}"
+            p8 = ranked_models_for_category(cat, mode, catalog, V8)
+            p9 = ranked_models_for_category(cat, mode, catalog, V9)
+            assert set(p8) <= set(p9), f"{cat}/{mode} lost a v8 model"
+            if len(p9) > len(p8):
+                deeper += 1
+    assert deeper >= 60, f"only {deeper} (category, mode) pools got deeper than v8's"
+
+
+def test_v9_is_v7s_data_with_only_grok_standard_changed():
+    from router_eval.phase2.routing_data import V7, V9
+
+    dead = "xai/grok-4.1-fast-non-reasoning"
+    assert V9.benchmarks == V7.benchmarks
+    assert V9.brand_premium == V7.brand_premium
+    differing = {
+        b for b in set(V7.brand_standard) | set(V9.brand_standard)
+        if V7.brand_standard.get(b) != V9.brand_standard.get(b)
+    }
+    assert differing == {"grok"}, differing
+    # The retired model must not survive anywhere in the LARGER v7 pool either, or
+    # capability fallover would still reach it as a tier-2 alternate.
+    assert dead not in V9.brand_standard.values()
+    assert dead not in V9.brand_premium.values()
