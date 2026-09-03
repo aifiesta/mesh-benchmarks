@@ -697,13 +697,9 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         [
             "chatgpt",
             "claude",
-            "nova"
+            "kimi26"
         ],
-        [
-            "qwen",
-            "hunyuan",
-            "glm"
-        ],
+        "qwen",
         "moonshot",
         "deepseek",
         "perplexity",
@@ -717,11 +713,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
             "chatgpt",
             "claude",
             "qwen",
-            "nova"
+            "kimi26"
         ],
         [
             "moonshot",
-            "glm"
+            "gpt55"
         ],
         "deepseek",
         "perplexity",
@@ -733,14 +729,13 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "gemini",
         [
             "chatgpt",
-            "qwencoder"
+            "gpt55"
         ],
+        "grok",
         [
-            "grok",
-            "nova",
-            "glm"
+            "claude",
+            "kimi26"
         ],
-        "claude",
         "moonshot",
         "qwen",
         "deepseek",
@@ -752,11 +747,11 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
         "gemini",
         [
             "chatgpt",
-            "nova"
+            "gpt55"
         ],
         [
             "claude",
-            "glm"
+            "kimi26"
         ],
         "qwen",
         "moonshot",
@@ -768,13 +763,10 @@ _V7_RANKING_OVERRIDES: dict[str, list] = {
     ],
     "Multimodal - Long-video understanding": [
         "gemini",
-        [
-            "chatgpt",
-            "nova"
-        ],
+        "chatgpt",
         [
             "claude",
-            "glm"
+            "kimi26"
         ],
         "qwen",
         "moonshot",
