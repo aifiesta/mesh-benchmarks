@@ -65,6 +65,12 @@ v7 better  75     v7 worse 147     tie 60      sign test p < 0.0001
 | `gemini-3-flash` → `claude-haiku-4.5` | 60 | **+0.054** |
 | `claude-sonnet-4.6` → `claude-sonnet-5` | 11 | +0.009 |
 
+> Round 1 ran before the table re-sync above, so its *absolute* baseline sits on the
+> drifted table. The comparison itself is unaffected — both arms shared that identical
+> base and v7's overrides were applied on top — which is why round 2's `benchmark`
+> absolute numbers differ (0.533 → 0.531, $0.00863 → $0.01083) while the round-1
+> conclusion stands.
+
 `deepseek-v4-flash`/`-pro` are newer than the models they replaced and carry 41k/72k
 successful production completions at 97–99% success — and are materially worse on our own
 traffic. **Production success proves a model SERVES; it says nothing about whether it is
