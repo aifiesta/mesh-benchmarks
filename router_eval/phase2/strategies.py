@@ -39,6 +39,7 @@ from router_eval.phase2.routing_data import (
     V4,
     V7,
     V8,
+    V9,
     BRAND_PREMIUM,
     RoutingData,
     conversation_standard_model,
@@ -211,6 +212,7 @@ def build_strategies(
         # so both see the same prompts, the same catalog and the same judge.
         BenchmarkStrategy(data=V7, name="benchmark_v7"),
         BenchmarkStrategy(data=V8, name="benchmark_v8"),
+        BenchmarkStrategy(data=V9, name="benchmark_v9"),
         HeuristicStrategy(),
         WeightedStrategy(profile=weight_profile),
         RegistryStrategy(),
