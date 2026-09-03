@@ -176,14 +176,17 @@ def test_estimate_dedupes_and_counts(traffic, catalog):
     providers = Providers(catalog, MockClassifier(), MockAnswerer(), MockJudge())
     p = plan(PipelineConfig(), providers, traffic)
     est = p.estimate
-    assert est.n_prompts == 5 and est.n_strategies == 7
+    # Derived, not hardcoded: adding a strategy (e.g. benchmark_v7) must not fail this
+    # test for a reason that has nothing to do with dedupe/estimate arithmetic.
+    n_strategies = len(build_strategies())
+    assert est.n_prompts == 5 and est.n_strategies == n_strategies
     # benchmark + weighted (+ heuristic misses) all classify with gpt-4o-mini, deduped by
     # content → at most one per prompt; registry adds gemini per prompt.
     assert est.classifier_calls_by_model["google/gemini-3-flash-preview"] == 5
     assert est.classifier_calls_by_model["openai/gpt-4o-mini"] == 5
     assert est.classifier_calls == 10
     # inference calls are deduped and never exceed strategies × prompts.
-    assert 0 < est.live_inference_calls <= 7 * 5
+    assert 0 < est.live_inference_calls <= n_strategies * 5
     assert est.judge_calls >= est.live_inference_calls
     assert est.total_live_calls == est.live_inference_calls + est.judge_calls + est.classifier_calls
 
@@ -202,7 +205,7 @@ def test_dry_run_pipeline_end_to_end(traffic, catalog, tmp_path):
     result = run_pipeline(PipelineConfig(out_dir=tmp_path), providers, traffic)
     names = {s.name for s in result.strategies}
     assert names == {"random", "always_cheapest", "always_premium",
-                     "benchmark", "heuristic", "weighted", "registry"}
+                     "benchmark", "benchmark_v7", "heuristic", "weighted", "registry"}
     for s in result.strategies:
         assert s.n == 5
         assert 0.0 <= s.mean_judge_score <= 1.0
@@ -238,3 +241,60 @@ def test_mock_judge_scores_empty_low_and_bounded():
     assert j.score("q", "", "m")["score"] == 0.0
     s = j.score("q", "a real answer of some length", "m")["score"]
     assert 0.0 <= s <= 1.0
+
+
+# ── Routing data: v4 vs v7, and the tie-break rule ──────────────────────────────
+def test_resolve_picks_randomly_among_tier1_ties_like_the_gateway():
+    """The gateway's resolve_from_benchmark_category does `random.choice` over the
+    tier-1 tie-group. Taking sorted(...)[0] instead collapses every tie to one member,
+    which under-samples the reachable pool AND makes a version that ADDS brands to
+    tie-groups look like it changed almost nothing. Any A/B over tie-group membership
+    depends on this."""
+    from router_eval.phase2.routing_data import V4, resolve_benchmark_model
+
+    cat = "General reasoning / Q&A - General Conversation, Chatting"
+    tier1 = V4.benchmarks[cat][0]
+    expected = {V4.brand_premium[b] for b in tier1}
+    catalog = set(V4.brand_premium.values())
+
+    rng = random.Random(7)
+    got = {resolve_benchmark_model(cat, "premium", catalog, V4, rng) for _ in range(300)}
+    assert got == expected, "random tie-break must reach every tier-1 brand"
+
+    # rng=None keeps the deterministic first-of-tie behaviour.
+    fixed = {resolve_benchmark_model(cat, "premium", catalog, V4) for _ in range(10)}
+    assert len(fixed) == 1 and fixed <= expected
+
+
+def test_v7_reaches_strictly_more_models_than_v4():
+    from router_eval.phase2.routing_data import V4, V7, resolve_benchmark_model
+
+    catalog = set(V4.brand_premium.values()) | set(V4.brand_standard.values()) | set(
+        V7.brand_premium.values()
+    ) | set(V7.brand_standard.values())
+
+    def reachable(data):
+        rng = random.Random(11)
+        out = set()
+        for cat in data.benchmarks:
+            for mode in ("premium", "standard"):
+                for _ in range(40):
+                    m = resolve_benchmark_model(cat, mode, catalog, data, rng)
+                    if m:
+                        out.add(m)
+        return out
+
+    v4_reach, v7_reach = reachable(V4), reachable(V7)
+    assert v4_reach < v7_reach, "v7 must strictly expand the reachable set"
+
+
+def test_v7_is_derived_over_v4_and_never_drops_a_v4_brand():
+    from router_eval.phase2.routing_data import V4, V7
+
+    for tier in ("brand_premium", "brand_standard"):
+        v4_map, v7_map = getattr(V4, tier), getattr(V7, tier)
+        for brand, model in v4_map.items():
+            assert v7_map[brand] == model, f"{tier}[{brand}] changed"
+    # Web-research categories are untouched (the web-capability guarantee).
+    for cat in (c for c in V7.benchmarks if c.startswith("Web research / citations")):
+        assert V7.benchmarks[cat] == V4.benchmarks[cat], cat

@@ -35,7 +35,10 @@ from router_eval.phase2.classifier import (
     ClassifierBackend,
 )
 from router_eval.phase2.routing_data import (
+    V4,
+    V7,
     BRAND_PREMIUM,
+    RoutingData,
     conversation_standard_model,
     ranked_models_for_category,
     resolve_benchmark_model,
@@ -90,12 +93,24 @@ class AlwaysPremiumStrategy(Phase2Strategy):
 
 # ── Classifying strategies ─────────────────────────────────────────────────────
 class BenchmarkStrategy(Phase2Strategy):
+    """classify → rank → top brand's tier model. Parameterised by routing-data version so
+    the SAME implementation can be run for v4 (what production serves) and v7 (the
+    MESH-232 coverage expansion) — the two differ only in their data, which is exactly
+    what the A/B is meant to isolate."""
+
     name = "benchmark"
+
+    def __init__(self, data: RoutingData = V4, name: str | None = None) -> None:
+        self.data = data
+        if name is not None:
+            self.name = name
 
     def pick(self, prompt: str, ctx: RouteContext) -> str | None:
         ids = set(ctx.catalog.ids())
         category, mode = ctx.classifier.category(prompt)
-        chosen = resolve_benchmark_model(category, mode, ids)
+        # ctx.rng (seeded) drives the tie-break, mirroring the gateway's random.choice
+        # among equally-ranked tier-1 brands. Deterministic per seed, so runs reproduce.
+        chosen = resolve_benchmark_model(category, mode, ids, self.data, ctx.rng)
         if chosen is not None:
             return chosen
         default = BRAND_PREMIUM.get("chatgpt")
@@ -165,7 +180,9 @@ class RegistryStrategy(Phase2Strategy):
         return [MODEL_CLASSIFIER_MODEL]
 
 
-def build_strategies(weight_profile: str = "balanced", *, real_only: bool = False) -> list[Phase2Strategy]:
+def build_strategies(
+    weight_profile: str = "balanced", *, real_only: bool = False
+) -> list[Phase2Strategy]:
     """`real_only` drops the random/always_* baselines. They are corrupted by the
     catalog's unservable models (documented in RESULTS), and at n=692 they account for
     most unique (prompt, model) pairs — i.e. most of the judge spend — for numbers we
@@ -176,6 +193,9 @@ def build_strategies(weight_profile: str = "balanced", *, real_only: bool = Fals
         AlwaysCheapestStrategy(),
         AlwaysPremiumStrategy(),
         BenchmarkStrategy(),
+        # The MESH-232 candidate: identical strategy, v7 data. Runs alongside `benchmark`
+        # so both see the same prompts, the same catalog and the same judge.
+        BenchmarkStrategy(data=V7, name="benchmark_v7"),
         HeuristicStrategy(),
         WeightedStrategy(profile=weight_profile),
         RegistryStrategy(),
