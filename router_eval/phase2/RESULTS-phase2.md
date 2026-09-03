@@ -1,7 +1,9 @@
 # Results — Phase 2 live router evaluation
 
 > **STATUS: re-run 2026-09-03** for MESH-232, judged by `anthropic/claude-sonnet-4-6` on
-> **692 real Mesh prompts**. Supersedes the 2026-08-27 n=91 run: two harness defects found
+> **692 real Mesh prompts**, covering both candidate versions — **v7** (pool expansion,
+> rounds 1–2) and **v8** (the `grok` standard-tier repair, round 3).
+> Supersedes the 2026-08-27 n=91 run: two harness defects found
 > since then (below) changed which models the `benchmark` baseline routed to, so the older
 > numbers are not comparable. Raw prompts/answers are PII and are **not** committed
 > (`out/`, `.cache/`, `mesh_traffic.jsonl` are gitignored); this file is the committed record.
@@ -12,6 +14,10 @@ MESH-232: `model=auto` ranks **brands, not models**, and the benchmark path only
 from tier-1 — so production (routing-data version **v4**) can land on just **11** model ids
 out of a 1,000+ catalog. Candidate version **v7** expands the pool. *Does the expanded
 version pick **better** models, or merely **different** ones?*
+
+Answering it surfaced a second, sharper question. The single worst model in the whole run
+is not one of the candidates — it is `xai/grok-4.1-fast-non-reasoning`, which **v4 already
+routes to**. Round 3 measures replacing it (version **v8**).
 
 ## Two harness defects had to be fixed first
 
@@ -103,6 +109,81 @@ v7's candidates were gated on production evidence (≥100 successful completions
 
 The gate works. The worst model in the whole run is one **already in production routing**
 that would not pass it.
+
+## Round 3 — v8, repairing the `grok` standard tier: BETTER
+
+The gate section above ends on an observation rather than a change: the worst model in
+the entire run, `xai/grok-4.1-fast-non-reasoning`, is one **v4 already routes to**.
+Round 3 measures the fix.
+
+`grok` sits in the tier-1 tie-group of *General Conversation, Chatting* and in the four
+web-research categories, so the benchmark strategy picks its **standard** model on
+**26 of the 692** prompts. In production that model is now failing outright — 90.1%
+success over 90 days, 79.5% over 30, **42.7% in September**, dominated by 429s on the
+vertex `xai/` path — and no cheaper grok clears the servability gate. **v8** therefore
+aliases the standard tier to the premium `x-ai/grok-4.20` and changes nothing else: one
+map entry, same rankings, same prompt, same premium map.
+
+| strategy | n | judge quality | cost/req | distinct models |
+|---|---|---|---|---|
+| benchmark (v4 — production) | 692 | 0.531 | $0.010827 | 8 |
+| benchmark_v7 (pool-only) | 692 | 0.531 | $0.010827 | 8 |
+| **benchmark_v8 (grok repair)** | 692 | **0.539** | **$0.010830** | 8 |
+| heuristic | 692 | 0.532 | $0.011178 | 8 |
+| weighted | 692 | 0.505 | $0.002920 | 6 |
+| registry | 692 | 0.296 | $0.002839 | 1 |
+| *[served]* (production reference) | 692 | 0.566 | $0.038701 | — |
+
+Paired, on the **26** prompts where the arms differ — every one of them the same swap,
+`xai/grok-4.1-fast-non-reasoning` → `x-ai/grok-4.20`:
+
+```
+delta (v8 - v4)   +0.2223      95% CI [+0.1131, +0.3446]   (bootstrap, 20k resamples)
+v8 better  17     v8 worse  2      tie  7      sign test p = 0.00073
+answer failures   v4  8/26        v8  0/26
+```
+
+**Where the gain comes from** — the split matters, because it says what was actually
+wrong:
+
+| | n | v4 | v8 | delta |
+|---|---|---|---|---|
+| prompts where v4's grok **failed the call** | 8 | 0.013 | 0.588 | **+0.575** |
+| prompts where v4's grok **answered** | 18 | 0.572 | 0.637 | +0.066 |
+
+Roughly two-thirds of the improvement is simply *getting an answer at all*. The residual
++0.066 is a real but modest quality gain. That matches what the model looks like scored
+in isolation: over the cached run `xai/grok-4.1-fast-non-reasoning` earns **0.521 on the
+calls that returned an answer** — against claude-haiku-4.5 0.587, deepseek-v3.2 0.593,
+gemini-3-flash 0.500 — while scoring 0.282 all-in. **Its answers are mid-pack; it does
+not answer.** The defect was availability, and the fix is a grok that serves.
+
+The population-level move is small (0.531 → 0.539) only because the swap reaches 3.8% of
+prompts. Cost is unchanged to five decimal places at this mix; at production volume the
+repriced slot is **+$25.66 per 30 days** (measured: the incumbent's last 30 days of
+successful traffic is 19.68M prompt + 1.94M completion tokens, billed $3.80, and $29.45
+at grok-4.20's rate).
+
+### Why this is the mirror image of round 1
+
+Round 1 promoted six brands into tier-1 on *"newer, and heavily used in production"* and
+made quality **worse** (−0.089, p < 0.0001). Round 3 changes one model on *"the incumbent
+is failing half its calls, and this is the only grok that both serves and is not slower"*
+and makes it **better** (+0.222, p = 0.0007). The gate that separates the two is
+evidence about **this** model in **this** slot — not novelty, and not aggregate
+popularity.
+
+### Boundaries on this result
+
+- **n = 26.** The effect is large and the sign test is decisive, but the CI is wide and
+  a handful of prompts drive it. It is strong evidence for *replacing a model that fails
+  half its calls*; it is not a precise estimate of the gain.
+- **The comparison is against a degrading baseline.** The incumbent was measurably
+  healthier in July (97.3%) than during this run. A rerun after any upstream quota fix
+  would show a smaller delta — which is an argument about *how much* v8 wins by, not
+  about whether the incumbent should stay.
+- **v7 and v8 are independent.** Both derive over v4 and neither includes the other;
+  the table above measures each against v4 separately, not the combination.
 
 ## Reading notes / honest boundaries
 

@@ -11,6 +11,11 @@ and in the weighted pool, but never the benchmark strategy's pick. Comparing
 `benchmark` (v4) against `benchmark_v7` on the same prompts is what tests whether the
 expansion picks BETTER models or merely different ones.
 
+v8 (MESH-232 follow-up) is a one-entry repair over v4: the `grok` STANDARD model,
+`xai/grok-4.1-fast-non-reasoning`, is failing production traffic, and v8 replaces it
+with an alias to the premium `x-ai/grok-4.20`. Unlike v7 it is expected to MOVE the
+pick, on the prompts where the benchmark strategy lands on standard-tier grok.
+
 Phase 1 replays the frozen v1 SUPERMODE table against RouterBench's 11 models. Phase 2
 routes over the LIVE Mesh catalog, so it uses the v4 data the production router actually
 runs: the v1 table with the six v4 ranking overrides, and the brand→Mesh-model-id maps
@@ -961,6 +966,25 @@ class RoutingData:
 
 V4 = RoutingData("v4", V4_BENCHMARKS, BRAND_PREMIUM, BRAND_STANDARD)
 V7 = RoutingData("v7", V7_BENCHMARKS, BRAND_PREMIUM_V7, BRAND_STANDARD_V7)
+
+# ── v8 standard map (MESH-232 follow-up — repair the `grok` STANDARD tier) ────────
+# GENERATED from routersvc `app/auto_router/versions.py::V8` — keep in lockstep.
+#
+# v4 maps `grok` standard to `xai/grok-4.1-fast-non-reasoning`, which is failing live
+# traffic (90.1% success over 90 days, 79.5% over 30, 42.7% in September; 429-throttled
+# on the vertex `xai/` path). `grok` is tier-1 in "General Conversation, Chatting" and in
+# the four web-research categories, so the benchmark strategy reaches it — it is the pick
+# on 26 of these 692 prompts, and in the round-2 run it failed 138 of 237 answer attempts.
+#
+# No cheaper grok clears the servability gate, so v8 aliases the standard tier to the
+# premium `x-ai/grok-4.20` (99.6% over 14,870 prod completions, 927ms). Unlike v7 this is
+# EXPECTED to move the pick — that is the point of the comparison.
+#
+# v8 changes exactly ONE map entry: rankings and the premium map are v4's, so
+# `benchmark` vs `benchmark_v8` isolates the standard grok model and nothing else.
+BRAND_STANDARD_V8: dict[str, str] = {**BRAND_STANDARD, "grok": "x-ai/grok-4.20"}
+
+V8 = RoutingData("v8", V4_BENCHMARKS, BRAND_PREMIUM, BRAND_STANDARD_V8)
 
 
 def _brand_map(mode: str) -> dict[str, str]:

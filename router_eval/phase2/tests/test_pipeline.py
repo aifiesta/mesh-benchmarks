@@ -205,7 +205,8 @@ def test_dry_run_pipeline_end_to_end(traffic, catalog, tmp_path):
     result = run_pipeline(PipelineConfig(out_dir=tmp_path), providers, traffic)
     names = {s.name for s in result.strategies}
     assert names == {"random", "always_cheapest", "always_premium",
-                     "benchmark", "benchmark_v7", "heuristic", "weighted", "registry"}
+                     "benchmark", "benchmark_v7", "benchmark_v8", "heuristic",
+                     "weighted", "registry"}
     for s in result.strategies:
         assert s.n == 5
         assert 0.0 <= s.mean_judge_score <= 1.0
@@ -304,3 +305,53 @@ def test_v7_is_derived_over_v4_and_never_drops_a_v4_brand():
     # Web-research categories are untouched (the web-capability guarantee).
     for cat in (c for c in V7.benchmarks if c.startswith("Web research / citations")):
         assert V7.benchmarks[cat] == V4.benchmarks[cat], cat
+
+
+def test_v8_moves_the_pick_only_where_standard_grok_was_chosen():
+    """v8 is the mirror of v7: a POOL of the same size, but the WINNER moves — and only
+    in standard mode, only where `grok` wins the tie-group.
+
+    v4 routes the `grok` standard tier to `xai/grok-4.1-fast-non-reasoning`, which is
+    failing production traffic (42.7% success in September). v8 aliases that tier to the
+    premium `x-ai/grok-4.20`. Premium mode must be untouched, because `grok`'s premium
+    model already IS the replacement."""
+    from router_eval.phase2.routing_data import V4, V8, resolve_benchmark_model
+
+    dead, fix = "xai/grok-4.1-fast-non-reasoning", "x-ai/grok-4.20"
+    catalog = (
+        set(V4.brand_premium.values()) | set(V4.brand_standard.values())
+        | set(V8.brand_premium.values()) | set(V8.brand_standard.values())
+    )
+    moved = 0
+    for cat in V4.benchmarks:
+        for mode in ("premium", "standard"):
+            rng4, rng8 = random.Random(11), random.Random(11)
+            for _ in range(30):
+                p4 = resolve_benchmark_model(cat, mode, catalog, V4, rng4)
+                p8 = resolve_benchmark_model(cat, mode, catalog, V8, rng8)
+                if p4 == p8:
+                    continue
+                # The ONLY difference v8 may produce is this one swap, in standard mode.
+                assert mode == "standard", f"{cat}: premium must not move"
+                assert (p4, p8) == (dead, fix), f"{cat}/{mode}: unexpected swap {p4}->{p8}"
+                moved += 1
+    assert moved > 0, "v8 never moved the pick — the repair is unreachable"
+
+
+def test_v8_retires_the_failing_model_and_changes_nothing_else():
+    from router_eval.phase2.routing_data import V4, V8
+
+    dead = "xai/grok-4.1-fast-non-reasoning"
+    assert V4.brand_standard["grok"] == dead, "v4's defect moved — re-read v8"
+    assert dead not in V8.brand_standard.values()
+    assert dead not in V8.brand_premium.values()
+    # Same-brand alias: standard grok IS premium grok, so no tie-group is re-weighted.
+    assert V8.brand_standard["grok"] == V8.brand_premium["grok"]
+    # Everything else is v4's, byte-for-byte — that is what makes the A/B interpretable.
+    assert V8.benchmarks == V4.benchmarks
+    assert V8.brand_premium == V4.brand_premium
+    differing = {
+        b for b in set(V4.brand_standard) | set(V8.brand_standard)
+        if V4.brand_standard.get(b) != V8.brand_standard.get(b)
+    }
+    assert differing == {"grok"}, differing
