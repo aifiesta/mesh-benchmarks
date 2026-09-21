@@ -206,7 +206,9 @@ def test_dry_run_pipeline_end_to_end(traffic, catalog, tmp_path):
     names = {s.name for s in result.strategies}
     assert names == {"random", "always_cheapest", "always_premium",
                      "benchmark", "benchmark_v7", "benchmark_v8",
-                     "benchmark_v9", "heuristic", "weighted", "registry"}
+                     "benchmark_v9", "benchmark_v10", "benchmark_v11",
+                     "heuristic", "weighted", "weighted_v10", "weighted_v11",
+                     "weighted_v11_aa", "weighted_v10_aa", "registry"}
     for s in result.strategies:
         assert s.n == 5
         assert 0.0 <= s.mean_judge_score <= 1.0

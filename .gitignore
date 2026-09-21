@@ -17,9 +17,14 @@ router_eval/results/routerbench_*/picks.csv
 router_eval/phase2/mesh_traffic.jsonl
 # On-disk caches of live answers + judgments (contain prompts/answers).
 router_eval/phase2/.cache/
+router_eval/phase2/.cache_*/
 router_eval/phase2/cache/
 # Any live-run outputs (picks/answers/judgments/aggregates with prompt text).
 router_eval/phase2/out/
 router_eval/phase2/runs/
 *.answers.jsonl
 *.judgments.jsonl
+router_eval/nightly/.cache/
+router_eval/nightly/sample.jsonl
+router_eval/nightly/results/
+router_eval/nightly/nightly.log
