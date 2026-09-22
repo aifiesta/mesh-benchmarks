@@ -277,7 +277,10 @@ def _minmax_lower_better(values: dict[str, float]) -> dict[str, float]:
 
 
 def score_pool_quality_cost(
-    pool: list[str], mean_cost: dict[str, float], weights: Weights
+    pool: list[str],
+    mean_cost: dict[str, float],
+    weights: Weights,
+    quality: dict[str, float] | None = None,
 ) -> list[str]:
     """Rank a category pool by the PORTABLE weighted objective — quality + cost only.
 
@@ -288,6 +291,11 @@ def score_pool_quality_cost(
     drop the term and renormalize the remaining weights" degradation, applied uniformly.
     Each candidate's score renormalizes over its present terms. Returns model ids
     best-first; deterministic tie-break: score desc, pool rank, lexical id.
+
+    `quality` (MESH-941 part B) overrides the rank-derived Q per model — pass a map
+    already normalised to [0,1]. A model absent from it keeps the rank-derived value, so
+    an unscored model degrades to today's behaviour rather than dropping to Q=0 and
+    silently leaving contention. None ⇒ pure rank, byte-identical to before.
     """
     n = len(pool)
     cost_raw = {m: math.log10(max(mean_cost[m], _LOG_EPSILON)) for m in pool if m in mean_cost}
@@ -295,7 +303,7 @@ def score_pool_quality_cost(
 
     scored: list[tuple[float, int, str]] = []
     for rank, m in enumerate(pool):
-        q = _quality(rank, n)
+        q = _quality(rank, n) if quality is None else quality.get(m, _quality(rank, n))
         c = cost_norm.get(m)
         wsum = weights.q
         acc = weights.q * q

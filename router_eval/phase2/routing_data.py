@@ -1006,6 +1006,58 @@ BRAND_STANDARD_V9: dict[str, str] = {**BRAND_STANDARD_V7, "grok": "x-ai/grok-4.2
 
 V9 = RoutingData("v9", V7_BENCHMARKS, BRAND_PREMIUM_V7, BRAND_STANDARD_V9)
 
+# ── v10 — v9's DATA (the prompt is the only difference, and the harness has its own) ──
+# routersvc's v10 is "v9 with v2's trimmed classifier prompt". This harness runs its OWN
+# classifier (CATEGORY_CLASSIFIER_MODEL), so the gateway's classifier_system_prompt is not
+# a field it models at all — which makes v10's ROUTING DATA byte-identical to v9's here.
+# It is declared under its own name anyway, because "what is prod serving" should be
+# answerable in this file without knowing that fact, and because v11 derives over it.
+V10 = RoutingData("v10", V7_BENCHMARKS, BRAND_PREMIUM_V7, BRAND_STANDARD_V9)
+
+# ── v11 — pool expansion chosen on MEASURED quality (MESH-941) ───────────────────
+# GENERATED from routersvc `app/auto_router/versions.py::V11` — keep in lockstep.
+#
+# Four brands whose models each carry an Artificial Analysis intelligence score AND >=200
+# prod calls at >=97% success. Appended as a NEW LOWEST TIER, so v11's tier-1 is v10's in
+# every category and the BENCHMARK pick is unchanged by construction — the whole effect
+# should land on the WEIGHTED arm, whose pool this grows. That is the hypothesis the
+# v10-vs-v11 comparison exists to test.
+BRAND_PREMIUM_V11: dict[str, str] = {
+    **BRAND_PREMIUM_V7,
+    "gptluna": "openai/gpt-5.6-luna",       # AA 37.5, $0.20 in — 13,031 ok / 99.95%
+    "grok45": "x-ai/grok-4.3",              # AA 25.4 — 2,857 ok / 99.96%
+    "geminilite": "google/gemini-3.5-flash-lite",  # AA 22.7, $0.30 in — 3,047 ok / 99.77%
+    "gptnano": "openai/gpt-5.4-nano",       # AA 21.2, $0.20 in — 4,352 ok / 99.29%
+}
+# Same model in both tiers for all four (none aliases an incumbent brand's model, so no
+# tie-group is re-weighted). grok45 is grok-4.3 and NOT the higher-scoring grok-4.5:
+# grok-4.5 is supports_structured_output=false and the router does not filter candidates
+# on that dimension, so a json_schema request could have selected it and failed upstream.
+BRAND_STANDARD_V11: dict[str, str] = {**BRAND_STANDARD_V9, **{
+    k: v for k, v in BRAND_PREMIUM_V11.items() if k not in BRAND_PREMIUM_V7
+}}
+
+_V11_APPENDED_TIER: tuple[str, ...] = ("grok45", "gptluna", "geminilite", "gptnano")
+# Only brands whose models take image input in BOTH tiers may enter a Multimodal ranking.
+# grok-4.3 is text-only, so grok45 is excluded there (v7's rule, unchanged).
+_V11_VISION_TIER: tuple[str, ...] = ("gptluna", "geminilite", "gptnano")
+
+# The nine "Web research / citations" categories take no new brand — they rank on citation
+# behaviour, which none of these four has been measured on.
+V11_BENCHMARKS: dict[str, list] = {
+    **V7_BENCHMARKS,
+    **{
+        category: [
+            *ranking,
+            list(_V11_VISION_TIER if category.startswith("Multimodal") else _V11_APPENDED_TIER),
+        ]
+        for category, ranking in V7_BENCHMARKS.items()
+        if not category.startswith("Web research")
+    },
+}
+
+V11 = RoutingData("v11", V11_BENCHMARKS, BRAND_PREMIUM_V11, BRAND_STANDARD_V11)
+
 
 def _brand_map(mode: str) -> dict[str, str]:
     return BRAND_STANDARD if mode == "standard" else BRAND_PREMIUM
