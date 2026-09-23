@@ -136,3 +136,22 @@ def test_paired_bootstrap_rejects_an_unknown_arm(recovered):
 )
 def test_sign_test_p_matches_the_exact_binomial(wins_a, wins_b, expected):
     assert _sign_test_p(wins_a, wins_b) == pytest.approx(expected)
+
+
+def test_conditional_arm_excludes_identical_picks(recovered):
+    """The conditional numbers must cover only the prompts where the PICK differs — that is
+    the scale RESULTS-phase2.md quotes, and it is a different denominator from the mean."""
+    picks, rec, _ = recovered
+    r = paired_bootstrap(rec, "arm_a", "arm_b", picks, resamples=2000, seed=7)
+    assert r.cond_n == 4  # prompt 0 is the shared pick
+    assert r.cond_diff == pytest.approx(0.4)  # vs 0.32 unconditional
+    assert (r.cond_a_wins, r.cond_b_wins, r.cond_ties) == (4, 0, 0)
+    assert r.cond_ci_low > 0
+
+
+def test_conditional_arm_is_empty_when_every_pick_is_shared(recovered):
+    picks, rec, _ = recovered
+    shared = {"arm_a": ["vendor/shared"] * 5, "arm_b": ["vendor/shared"] * 5}
+    r = paired_bootstrap(rec, "arm_a", "arm_b", shared, resamples=200, seed=7)
+    assert r.cond_n == 0
+    assert (r.cond_diff, r.cond_ci_low, r.cond_ci_high) == (0.0, 0.0, 0.0)

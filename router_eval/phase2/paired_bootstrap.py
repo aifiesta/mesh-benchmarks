@@ -196,6 +196,18 @@ class PairedResult:
     median_diff_of_differing: float
     failed_a: int
     failed_b: int
+    # Conditional on the prompts where the two arms picked DIFFERENT models. This is the
+    # scale RESULTS-phase2.md reports for the v7 round ("paired, on the 282 prompts where
+    # the arms differed"), so both are printed — they answer different questions. The
+    # unconditional mean is the fleet-wide effect (ties correctly dilute it); the
+    # conditional mean is the effect size where the change actually bites.
+    cond_n: int = 0
+    cond_diff: float = 0.0
+    cond_ci_low: float = 0.0
+    cond_ci_high: float = 0.0
+    cond_a_wins: int = 0
+    cond_b_wins: int = 0
+    cond_ties: int = 0
 
 
 def _sign_test_p(wins_a: int, wins_b: int) -> float:
@@ -256,19 +268,6 @@ def paired_bootstrap(
     )
     differing = [d for d in deltas if d != 0]
 
-    rng = random.Random(seed)
-    boots: list[float] = []
-    idx_range = range(n)
-    for _ in range(resamples):
-        draw = [deltas[rng.randrange(n)] for _ in idx_range]
-        boots.append(sum(draw) / n)
-    boots.sort()
-    lo_i = int((1 - ci) / 2 * resamples)
-    hi_i = int((1 + ci) / 2 * resamples) - 1
-    # Two-sided bootstrap p: how much of the resampled distribution sits on, or across, 0.
-    crossed = sum(1 for b in boots if b >= 0) if point < 0 else sum(1 for b in boots if b <= 0)
-    p_boot = min(1.0, 2.0 * (crossed + 1) / (resamples + 1))
-
     paired_idx = [
         i
         for i, (a, b) in enumerate(zip(rec.scores[arm_a], rec.scores[arm_b]))
@@ -277,6 +276,40 @@ def paired_bootstrap(
     failed_a = sum(1 for i in paired_idx if rec.failed[arm_a][i])
     failed_b = sum(1 for i in paired_idx if rec.failed[arm_b][i])
 
+    rng = random.Random(seed)
+
+    def _boot(sample: list[float]) -> tuple[float, float, float]:
+        """Percentile CI of the mean of `sample`, plus the two-sided bootstrap p.
+
+        The p is the share of resampled means sitting on, or across, zero — floored at
+        2/(resamples+1), which `_fmt_p` prints as an inequality rather than a value.
+        """
+        if not sample:
+            return 0.0, 0.0, 1.0
+        k = len(sample)
+        draws = sorted(
+            sum(sample[rng.randrange(k)] for _ in range(k)) / k for _ in range(resamples)
+        )
+        centre = sum(sample) / k
+        crossed = (
+            sum(1 for d in draws if d >= 0) if centre < 0 else sum(1 for d in draws if d <= 0)
+        )
+        return (
+            draws[int((1 - ci) / 2 * resamples)],
+            draws[int((1 + ci) / 2 * resamples) - 1],
+            min(1.0, 2.0 * (crossed + 1) / (resamples + 1)),
+        )
+
+    ci_low, ci_high, p_boot = _boot(deltas)
+
+    # Conditional: only the prompts where the two arms picked DIFFERENT models. The
+    # unconditional mean above is the fleet-wide effect, with identical picks correctly
+    # diluting it; this is the effect size where the change actually bites, and it is the
+    # scale RESULTS-phase2.md quotes for the v7 round.
+    cond_idx = [i for i in paired_idx if picks[arm_a][i] != picks[arm_b][i]]
+    cond = [rec.scores[arm_a][i] - rec.scores[arm_b][i] for i in cond_idx]
+    cond_lo, cond_hi, _cond_p = _boot(cond)
+
     return PairedResult(
         arm_a=arm_a,
         arm_b=arm_b,
@@ -284,8 +317,8 @@ def paired_bootstrap(
         mean_a=mean_a,
         mean_b=mean_b,
         diff=point,
-        ci_low=boots[lo_i],
-        ci_high=boots[hi_i],
+        ci_low=ci_low,
+        ci_high=ci_high,
         resamples=resamples,
         a_wins=a_wins,
         b_wins=b_wins,
@@ -296,6 +329,13 @@ def paired_bootstrap(
         median_diff_of_differing=statistics.median(differing) if differing else 0.0,
         failed_a=failed_a,
         failed_b=failed_b,
+        cond_n=len(cond),
+        cond_diff=(sum(cond) / len(cond)) if cond else 0.0,
+        cond_ci_low=cond_lo,
+        cond_ci_high=cond_hi,
+        cond_a_wins=sum(1 for d in cond if d > 0),
+        cond_b_wins=sum(1 for d in cond if d < 0),
+        cond_ties=sum(1 for d in cond if d == 0),
     )
 
 
@@ -325,6 +365,11 @@ def format_result(r: PairedResult) -> str:
         f"{r.median_diff_of_differing:+.6f}\n"
         f"  empty/failed answers  {r.arm_a} {r.failed_a} | {r.arm_b} {r.failed_b} "
         f"(of {r.n_paired} prompts)\n"
+        f"  --- conditional on the {r.cond_n} prompts where the arms picked DIFFERENT models ---\n"
+        f"  conditional difference {r.cond_diff:+.6f}  "
+        f"95% CI [{r.cond_ci_low:+.6f}, {r.cond_ci_high:+.6f}]\n"
+        f"  conditional wins      {r.arm_a} {r.cond_a_wins} | {r.arm_b} {r.cond_b_wins} "
+        f"| tie {r.cond_ties}\n"
     )
 
 
