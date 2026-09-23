@@ -244,11 +244,14 @@ def paired_bootstrap(
         if arm not in rec.scores:
             raise KeyError(f"unknown strategy arm {arm!r}; have: {sorted(rec.scores)}")
 
-    pairs = [
-        (a, b)
-        for a, b in zip(rec.scores[arm_a], rec.scores[arm_b])
+    # The prompts both arms have a recovered score for — the pairing, and the index set
+    # every statistic below is computed over.
+    paired_idx = [
+        i
+        for i, (a, b) in enumerate(zip(rec.scores[arm_a], rec.scores[arm_b]))
         if a is not None and b is not None
     ]
+    pairs = [(rec.scores[arm_a][i], rec.scores[arm_b][i]) for i in paired_idx]
     if not pairs:
         raise ValueError(f"no prompts have a recovered score for both {arm_a} and {arm_b}")
 
@@ -268,11 +271,6 @@ def paired_bootstrap(
     )
     differing = [d for d in deltas if d != 0]
 
-    paired_idx = [
-        i
-        for i, (a, b) in enumerate(zip(rec.scores[arm_a], rec.scores[arm_b]))
-        if a is not None and b is not None
-    ]
     failed_a = sum(1 for i in paired_idx if rec.failed[arm_a][i])
     failed_b = sum(1 for i in paired_idx if rec.failed[arm_b][i])
 
